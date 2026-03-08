@@ -2,18 +2,28 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>EXECUTIVE Personal Planner</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif; background: #0f172a; color: #f1f5f9; overflow: hidden; -webkit-tap-highlight-color: transparent; }
-  input, select, textarea, button { font-family: inherit; font-size: 16px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: rgba(212,168,83,0.15); touch-action: manipulation; }
+  html, body, #root { height: 100%; width: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    background: #0f172a; color: #f1f5f9; overflow: hidden;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
+  input, select, textarea, button { font-family: inherit; font-size: 16px; -webkit-appearance: none; border-radius: 0; }
+  select { -webkit-appearance: menulist; border-radius: 8px; }
+  input[type="checkbox"] { -webkit-appearance: checkbox; accent-color: #d4a853; width: 22px; height: 22px; cursor: pointer; }
+  button { cursor: pointer; -webkit-user-select: none; user-select: none; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: #1e293b; }
   ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-  input[type="checkbox"] { accent-color: #d4a853; width: 22px; height: 22px; cursor: pointer; }
-  html, body, #root { height: 100%; width: 100%; }
-  body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+  /* iOS scroll fix */
+  .scroll-area { -webkit-overflow-scrolling: touch; overflow-y: auto; overflow-x: hidden; }
+  .scroll-area-x { -webkit-overflow-scrolling: touch; overflow-x: auto; }
 </style>
 </head>
 <body>
@@ -25,50 +35,54 @@
 const { useState, useCallback, useEffect, Fragment, useMemo } = React;
 
 /* ===== Responsive hook ===== */
-const useIsMobile = (breakpoint = 900) => {
-  const [m, sM] = useState(window.innerWidth < breakpoint);
-  useEffect(() => {
-    const h = () => sM(window.innerWidth < breakpoint);
+const useIsMobile = function(breakpoint) {
+  var bp = breakpoint || 900;
+  var _s = useState(window.innerWidth < bp);
+  var m = _s[0], sM = _s[1];
+  useEffect(function() {
+    var h = function() { sM(window.innerWidth < bp); };
     window.addEventListener("resize", h);
-    return () => window.removeEventListener("resize", h);
-  }, [breakpoint]);
+    return function() { window.removeEventListener("resize", h); };
+  }, [bp]);
   return m;
 };
 
 /* ===== localStorage helpers ===== */
-const STORAGE_KEY = "executive_planner_data";
-const loadData = () => { try { const d = localStorage.getItem(STORAGE_KEY); return d ? JSON.parse(d) : null; } catch(e) { return null; } };
-const saveData = (d) => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch(e) {} };
+var STORAGE_KEY = "executive_planner_data";
+var loadData = function() { try { var d = localStorage.getItem(STORAGE_KEY); return d ? JSON.parse(d) : null; } catch(e) { return null; } };
+var saveData = function(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch(e) {} };
 
 /* ===== SVG ICONS ===== */
-const icons = {
-  home: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
-  calendar: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
-  checkSquare: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
-  bookOpen: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
-  target: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
-  roadmap: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/><polyline points="15 19 18 22 21 19"/></svg>,
-  plus: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
-  x: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-  edit: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
-  trash: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
-  search: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
-  download: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
-  upload: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
-  chevronLeft: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>,
-  chevronRight: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
-  clock: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
-  tag: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
-  filter: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>,
-  barChart: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+var icons = {
+  home: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>; },
+  calendar: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>; },
+  checkSquare: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>; },
+  bookOpen: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>; },
+  target: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>; },
+  roadmap: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>; },
+  plus: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>; },
+  x: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; },
+  edit: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>; },
+  trash: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>; },
+  search: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>; },
+  download: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>; },
+  upload: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>; },
+  chevronLeft: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>; },
+  chevronRight: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>; },
+  clock: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>; },
+  tag: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>; },
+  filter: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>; },
+  barChart: function(sz,c) { return <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>; },
 };
-const I = ({name, size=18, color="currentColor"}) => {
-  const fn = icons[name];
-  return fn ? <span style={{display:"inline-flex",alignItems:"center",verticalAlign:"middle",lineHeight:0}}>{fn(size,color)}</span> : null;
+var I = function(props) {
+  var fn = icons[props.name];
+  var sz = props.size || 18;
+  var c = props.color || "currentColor";
+  return fn ? <span style={{display:"inline-flex",alignItems:"center",verticalAlign:"middle",lineHeight:0}}>{fn(sz,c)}</span> : null;
 };
 
 /* ===== SHARED CATEGORIES ===== */
-const CATEGORIES = [
+var CATEGORIES = [
   { key: "machitsuku", label: "街ツク", color: "#3b82f6" },
   { key: "university", label: "大学",   color: "#8b5cf6" },
   { key: "jobhunt",    label: "就活",   color: "#f59e0b" },
@@ -76,102 +90,109 @@ const CATEGORIES = [
   { key: "life",       label: "生活",   color: "#ec4899" },
   { key: "ai",         label: "AI",     color: "#06b6d4" },
 ];
-const catLabel = {}; CATEGORIES.forEach(c => catLabel[c.key] = c.label);
-const catColor = {}; CATEGORIES.forEach(c => catColor[c.key] = c.color);
-const CatOptions = () => CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>);
+var catLabel = {}; CATEGORIES.forEach(function(c) { catLabel[c.key] = c.label; });
+var catColor = {}; CATEGORIES.forEach(function(c) { catColor[c.key] = c.color; });
+var CatOptions = function() { return CATEGORIES.map(function(c) { return <option key={c.key} value={c.key}>{c.label}</option>; }); };
 
 /* ===== DATA ===== */
-const today = new Date();
-const fmt = (d) => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-const todayStr = fmt(today);
+var today = new Date();
+var fmt = function(d) { return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+var todayStr = fmt(today);
 
-const SAMPLE_EVENTS = [
+var SAMPLE_EVENTS = [
   {id:1,title:"ゼミ発表準備",date:todayStr,startTime:"10:00",endTime:"12:00",category:"university",memo:"資料を仕上げる"},
   {id:2,title:"ES添削",date:todayStr,startTime:"14:00",endTime:"15:30",category:"jobhunt",memo:"志望動機の修正"},
   {id:3,title:"ChatGPT API実装",date:todayStr,startTime:"19:00",endTime:"21:00",category:"ai",memo:""},
 ];
-const SAMPLE_TASKS = [
+var SAMPLE_TASKS = [
   {id:1,title:"レポート提出",deadline:todayStr,category:"university",done:false},
   {id:2,title:"企業リサーチ5社",deadline:fmt(new Date(today.getTime()+86400000*2)),category:"jobhunt",done:false},
   {id:3,title:"散歩コース開拓",deadline:fmt(new Date(today.getTime()+86400000*5)),category:"hobby",done:false},
   {id:4,title:"LLM論文を読む",deadline:todayStr,category:"ai",done:true},
 ];
-const SAMPLE_NOTES = [
+var SAMPLE_NOTES = [
   {id:1,date:todayStr,content:"今日のゼミで新しいアイデアが出た。来週までに具体化する。",tags:["大学","アイデア"]},
   {id:2,date:fmt(new Date(today.getTime()-86400000)),content:"面接練習のフィードバック。結論から話すことを意識する。",tags:["就活","面接"]},
 ];
-const SAMPLE_HABITS = [
+var SAMPLE_HABITS = [
   {id:1,name:"読書",frequency:"daily",category:"hobby"},
   {id:2,name:"散歩",frequency:"daily",category:"life"},
 ];
-const genSampleLog = () => {
-  const log={};
-  SAMPLE_HABITS.forEach(h=>{log[h.id]={};for(let i=0;i<7;i++){log[h.id][fmt(new Date(today.getTime()-i*86400000))]=Math.random()>0.3;}});
+var genSampleLog = function() {
+  var log={};
+  SAMPLE_HABITS.forEach(function(h){log[h.id]={};for(var i=0;i<7;i++){log[h.id][fmt(new Date(today.getTime()-i*86400000))]=Math.random()>0.3;}});
   return log;
 };
 
-/* Sample roadmap data */
-const SAMPLE_ROADMAP_ITEMS = [];
-const SAMPLE_ROADMAP_RANGES = [];
-
 /* ===== THEME ===== */
-const C = {
+var C = {
   bg:"#0f172a",bgCard:"#1e293b",bgHover:"#334155",bgInput:"#0f172a",
   gold:"#d4a853",goldBright:"#e8c36a",
   text:"#f1f5f9",textDim:"#94a3b8",textMuted:"#64748b",
   border:"#334155",
   red:"#ef4444",green:"#22c55e",
 };
-const DAYS_JP=["日","月","火","水","木","金","土"];
-const MONTHS_JP=["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
-const getDIM=(y,m)=>new Date(y,m+1,0).getDate();
-const getFDM=(y,m)=>new Date(y,m,1).getDay();
-let nid=100; const gid=()=>++nid;
+var DAYS_JP=["日","月","火","水","木","金","土"];
+var MONTHS_JP=["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+var getDIM=function(y,m){return new Date(y,m+1,0).getDate();};
+var getFDM=function(y,m){return new Date(y,m,1).getDay();};
+var nid=100; var gid=function(){return ++nid;};
+
+/* safe access helper for optional chaining replacement */
+var sa = function(obj, key) { return obj ? obj[key] : undefined; };
 
 /* ===== STYLES ===== */
-const S={
+var S={
   app:{display:"flex",height:"100vh",overflow:"hidden"},
   appMobile:{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"},
   sidebar:{width:220,background:C.bgCard,borderRight:"1px solid "+C.border,display:"flex",flexDirection:"column",flexShrink:0},
-  bottomBar:{background:C.bgCard,borderTop:"1px solid "+C.border,display:"flex",justifyContent:"space-around",padding:"6px 0 calc(6px + env(safe-area-inset-bottom))",flexShrink:0},
-  bottomItem:a=>({display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 4px",cursor:"pointer",color:a?C.gold:C.textMuted,fontSize:9,fontWeight:a?600:400,background:"transparent",border:"none",flex:1}),
-  navItem:a=>({display:"flex",alignItems:"center",gap:12,padding:"12px 20px",cursor:"pointer",background:a?C.bgHover:"transparent",color:a?C.gold:C.textDim,borderLeft:a?"3px solid "+C.gold:"3px solid transparent",transition:"all 0.2s",fontSize:14,fontWeight:a?600:400}),
-  main:{flex:1,overflow:"auto",padding:32},
-  mainMobile:{flex:1,overflow:"auto",padding:16},
+  bottomBar:{background:C.bgCard,borderTop:"1px solid "+C.border,display:"flex",justifyContent:"space-around",padding:"4px 0 calc(4px + env(safe-area-inset-bottom))",flexShrink:0},
+  bottomItem:function(a){return {display:"flex",flexDirection:"column",alignItems:"center",gap:1,padding:"4px 2px",cursor:"pointer",color:a?C.gold:C.textMuted,fontSize:9,fontWeight:a?600:400,background:"transparent",border:"none",flex:1,WebkitTapHighlightColor:"transparent"};},
+  navItem:function(a){return {display:"flex",alignItems:"center",gap:12,padding:"12px 20px",cursor:"pointer",background:a?C.bgHover:"transparent",color:a?C.gold:C.textDim,borderLeft:a?"3px solid "+C.gold:"3px solid transparent",transition:"all 0.2s",fontSize:14,fontWeight:a?600:400,border:"none",width:"100%",textAlign:"left"};},
+  main:{flex:1,overflow:"auto",padding:32,WebkitOverflowScrolling:"touch"},
+  mainMobile:{flex:1,overflow:"auto",padding:16,WebkitOverflowScrolling:"touch"},
   card:{background:C.bgCard,borderRadius:12,padding:24,marginBottom:16,border:"1px solid "+C.border},
   cardSm:{background:C.bgCard,borderRadius:8,padding:16,marginBottom:12,border:"1px solid "+C.border},
-  btn:c=>({background:c||C.gold,color:(c||C.gold)===C.gold?C.bg:"#fff",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,display:"inline-flex",alignItems:"center",gap:6}),
-  btnO:{background:"transparent",color:C.gold,border:"1px solid "+C.gold,borderRadius:8,padding:"8px 16px",cursor:"pointer",fontWeight:600,fontSize:13,display:"inline-flex",alignItems:"center",gap:6,justifyContent:"center"},
-  btnI:{background:"transparent",color:C.textDim,border:"none",cursor:"pointer",padding:4,display:"inline-flex",alignItems:"center"},
-  inp:{background:C.bgInput,border:"1px solid "+C.border,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,width:"100%",outline:"none",boxSizing:"border-box"},
-  sel:{background:C.bgInput,border:"1px solid "+C.border,borderRadius:8,padding:"8px 12px",color:C.text,fontSize:14,outline:"none"},
-  ta:{background:C.bgInput,border:"1px solid "+C.border,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:14,width:"100%",outline:"none",resize:"vertical",minHeight:100,boxSizing:"border-box",fontFamily:"inherit"},
-  badge:c=>({background:c+"22",color:c,borderRadius:12,padding:"2px 10px",fontSize:11,fontWeight:600,display:"inline-block"}),
-  modal:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000},
-  mc:{background:C.bgCard,borderRadius:16,padding:32,width:420,maxWidth:"90vw",border:"1px solid "+C.border,maxHeight:"80vh",overflow:"auto"},
-  g2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16},
+  btn:function(c){return {background:c||C.gold,color:(c||C.gold)===C.gold?C.bg:"#fff",border:"none",borderRadius:8,padding:"10px 16px",cursor:"pointer",fontWeight:600,fontSize:13,display:"inline-flex",alignItems:"center",gap:6};},
+  btnO:{background:"transparent",color:C.gold,border:"1px solid "+C.gold,borderRadius:8,padding:"10px 16px",cursor:"pointer",fontWeight:600,fontSize:13,display:"inline-flex",alignItems:"center",gap:6,justifyContent:"center"},
+  btnI:{background:"transparent",color:C.textDim,border:"none",cursor:"pointer",padding:6,display:"inline-flex",alignItems:"center",minWidth:32,minHeight:32,justifyContent:"center"},
+  inp:{background:C.bgInput,border:"1px solid "+C.border,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:16,width:"100%",outline:"none",boxSizing:"border-box"},
+  sel:{background:C.bgInput,border:"1px solid "+C.border,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:16,outline:"none"},
+  ta:{background:C.bgInput,border:"1px solid "+C.border,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:16,width:"100%",outline:"none",resize:"vertical",minHeight:100,boxSizing:"border-box",fontFamily:"inherit"},
+  badge:function(c){return {background:c+"22",color:c,borderRadius:12,padding:"2px 10px",fontSize:11,fontWeight:600,display:"inline-block"};},
+  modal:{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16},
+  mc:{background:C.bgCard,borderRadius:16,padding:24,width:420,maxWidth:"100%",border:"1px solid "+C.border,maxHeight:"80vh",overflow:"auto",WebkitOverflowScrolling:"touch"},
+  g2:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12},
   fb:{display:"flex",justifyContent:"space-between",alignItems:"center"},
-  fg:g=>({display:"flex",gap:g||8,alignItems:"center"}),
+  fg:function(g){return {display:"flex",gap:g||8,alignItems:"center"};},
   tg:{background:C.bgHover,color:C.goldBright,borderRadius:12,padding:"2px 10px",fontSize:11,fontWeight:500},
   nd:{color:C.textMuted,textAlign:"center",padding:32,fontSize:14},
   lbl:{fontSize:12,color:C.textMuted,marginBottom:4,display:"block"},
 };
 
 /* ===== MODAL ===== */
-const Modal=({title,onClose,children})=>(
-  <div style={S.modal} onClick={onClose}><div style={S.mc} onClick={e=>e.stopPropagation()}>
-    <div style={{...S.fb,marginBottom:20}}><h3 style={{fontSize:18,fontWeight:700,color:C.gold}}>{title}</h3><button style={S.btnI} onClick={onClose}><I name="x" size={20}/></button></div>
-    {children}
-  </div></div>
-);
+var Modal=function(props){
+  var title=props.title, onClose=props.onClose, children=props.children;
+  return <div style={S.modal} onClick={onClose}>
+    <div style={S.mc} onClick={function(e){e.stopPropagation();}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <h3 style={{fontSize:18,fontWeight:700,color:C.gold}}>{title}</h3>
+        <button style={S.btnI} onClick={onClose}><I name="x" size={20}/></button>
+      </div>
+      {children}
+    </div>
+  </div>;
+};
 
 /* ===== DASHBOARD ===== */
-const Dashboard=({events,tasks,habits,habitLog,notes,mobile})=>{
-  const tEv=events.filter(e=>e.date===todayStr).sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||"")).slice(0,4);
-  const pend=tasks.filter(t=>!t.done).length;
-  const hDone=habits.filter(h=>habitLog[h.id]?.[todayStr]).length;
-  const hRate=habits.length>0?Math.round(hDone/habits.length*100):0;
-  const ln=[...notes].sort((a,b)=>b.date.localeCompare(a.date))[0];
+var Dashboard=function(props){
+  var events=props.events, tasks=props.tasks, habits=props.habits, habitLog=props.habitLog, notes=props.notes, mobile=props.mobile;
+  var tEv=events.filter(function(e){return e.date===todayStr;}).sort(function(a,b){return (a.startTime||"").localeCompare(b.startTime||"");}).slice(0,4);
+  var pend=tasks.filter(function(t){return !t.done;}).length;
+  var hDone=habits.filter(function(h){return sa(sa(habitLog,h.id),todayStr);}).length;
+  var hRate=habits.length>0?Math.round(hDone/habits.length*100):0;
+  var sorted=[].concat(notes).sort(function(a,b){return b.date.localeCompare(a.date);});
+  var ln=sorted[0];
   return <div>
     <div style={{marginBottom:32}}>
       <div style={{fontSize:14,color:C.textMuted,letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>TODAY</div>
@@ -180,409 +201,372 @@ const Dashboard=({events,tasks,habits,habitLog,notes,mobile})=>{
     </div>
     <div style={mobile?{display:"flex",flexDirection:"column",gap:16}:S.g2}>
       <div style={S.card}>
-        <div style={{...S.fg(8),marginBottom:16}}><I name="calendar" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>今日の予定</span></div>
-        {tEv.length===0?<div style={S.nd}>予定なし</div>:tEv.map(ev=><div key={ev.id} style={{...S.fg(12),marginBottom:10}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16}}><I name="calendar" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>今日の予定</span></div>
+        {tEv.length===0?<div style={S.nd}>予定なし</div>:tEv.map(function(ev){return <div key={ev.id} style={{display:"flex",gap:12,alignItems:"center",marginBottom:10}}>
           <span style={{color:C.textMuted,fontSize:12,minWidth:90}}>{ev.startTime} - {ev.endTime}</span>
           <span style={{width:3,height:20,borderRadius:2,background:catColor[ev.category]||C.gold}}/>
           <span style={{fontSize:14}}>{ev.title}</span>
-        </div>)}
+        </div>;})}
       </div>
       <div style={S.card}>
-        <div style={{...S.fg(8),marginBottom:16}}><I name="checkSquare" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>タスク状況</span></div>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16}}><I name="checkSquare" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>タスク状況</span></div>
         <div style={{fontSize:48,fontWeight:800,color:pend>0?C.gold:C.green}}>{pend}</div>
         <div style={{fontSize:13,color:C.textDim}}>未完了のタスク</div>
       </div>
       <div style={S.card}>
-        <div style={{...S.fg(8),marginBottom:16}}><I name="target" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>今日の習慣</span></div>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16}}><I name="target" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>今日の習慣</span></div>
         <div style={{fontSize:48,fontWeight:800,color:hRate>=80?C.green:hRate>=50?C.gold:C.textDim}}>{hRate}%</div>
         <div style={{background:C.bgHover,borderRadius:8,height:8,marginTop:8,overflow:"hidden"}}><div style={{background:C.gold,height:"100%",width:hRate+"%",borderRadius:8,transition:"width 0.5s"}}/></div>
         <div style={{fontSize:12,color:C.textDim,marginTop:6}}>{hDone}/{habits.length} 達成</div>
       </div>
       <div style={S.card}>
-        <div style={{...S.fg(8),marginBottom:16}}><I name="bookOpen" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>最新のメモ</span></div>
+        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:16}}><I name="bookOpen" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>最新のメモ</span></div>
         {ln?<div><div style={{fontSize:12,color:C.textMuted,marginBottom:6}}>{ln.date}</div><div style={{fontSize:14,color:C.textDim,lineHeight:1.6}}>{ln.content.slice(0,80)}{ln.content.length>80?"...":""}</div></div>:<div style={S.nd}>メモなし</div>}
       </div>
     </div>
   </div>;
 };
 
-/* ===== SCHEDULE (時間範囲式) ===== */
-const Schedule=({events,setEvents})=>{
-  const [vd,setVd]=useState(new Date(today));
-  const [sel,setSel]=useState(todayStr);
-  const [sm,setSm]=useState(false);
-  const [ee,setEe]=useState(null);
-  const [f,sF]=useState({title:"",startTime:"",endTime:"",category:"university",memo:""});
-  const y=vd.getFullYear(),m=vd.getMonth(),dim=getDIM(y,m),fd=getFDM(y,m);
-  const prev=()=>setVd(new Date(y,m-1,1));
-  const next=()=>setVd(new Date(y,m+1,1));
-  const oA=()=>{setEe(null);sF({title:"",startTime:"",endTime:"",category:"university",memo:""});setSm(true);};
-  const oE=ev=>{setEe(ev);sF({title:ev.title,startTime:ev.startTime,endTime:ev.endTime,category:ev.category,memo:ev.memo});setSm(true);};
-  const save=()=>{if(!f.title)return;if(ee){setEvents(p=>p.map(e=>e.id===ee.id?{...e,...f}:e));}else{setEvents(p=>[...p,{id:gid(),date:sel,...f}]);}setSm(false);};
-  const rm=id=>setEvents(p=>p.filter(e=>e.id!==id));
-  const dEv=events.filter(e=>e.date===sel).sort((a,b)=>(a.startTime||"").localeCompare(b.startTime||""));
-  const cells=[];for(let i=0;i<fd;i++)cells.push(null);for(let d=1;d<=dim;d++)cells.push(d);
+/* ===== SCHEDULE ===== */
+var Schedule=function(props){
+  var events=props.events, setEvents=props.setEvents;
+  var _vd=useState(new Date(today)), vd=_vd[0], setVd=_vd[1];
+  var _sel=useState(todayStr), sel=_sel[0], setSel=_sel[1];
+  var _sm=useState(false), sm=_sm[0], setSm=_sm[1];
+  var _ee=useState(null), ee=_ee[0], setEe=_ee[1];
+  var _f=useState({title:"",startTime:"",endTime:"",category:"university",memo:""}), f=_f[0], sF=_f[1];
+  var y=vd.getFullYear(), m=vd.getMonth(), dim=getDIM(y,m), fd=getFDM(y,m);
+  var prev=function(){setVd(new Date(y,m-1,1));};
+  var next=function(){setVd(new Date(y,m+1,1));};
+  var oA=function(){setEe(null);sF({title:"",startTime:"",endTime:"",category:"university",memo:""});setSm(true);};
+  var oE=function(ev){setEe(ev);sF({title:ev.title,startTime:ev.startTime,endTime:ev.endTime,category:ev.category,memo:ev.memo});setSm(true);};
+  var save=function(){if(!f.title)return;if(ee){setEvents(function(p){return p.map(function(e){return e.id===ee.id?Object.assign({},e,f):e;});});}else{setEvents(function(p){return p.concat([Object.assign({id:gid(),date:sel},f)]);});}setSm(false);};
+  var rm=function(id){setEvents(function(p){return p.filter(function(e){return e.id!==id;});});};
+  var dEv=events.filter(function(e){return e.date===sel;}).sort(function(a,b){return (a.startTime||"").localeCompare(b.startTime||"");});
+  var cells=[];for(var i=0;i<fd;i++)cells.push(null);for(var d=1;d<=dim;d++)cells.push(d);
   return <div>
-    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>スケジュール</h2><button style={S.btn()} onClick={oA}><I name="plus" size={14} color={C.bg}/> 予定を追加</button></div>
+    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>スケジュール</h2><button style={S.btn()} onClick={oA}><I name="plus" size={14} color={C.bg}/> 追加</button></div>
     <div style={S.card}>
-      <div style={{...S.fb,marginBottom:20}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <button style={S.btnI} onClick={prev}><I name="chevronLeft" size={20} color={C.gold}/></button>
         <span style={{fontSize:18,fontWeight:700,color:C.gold}}>{y}年 {MONTHS_JP[m]}</span>
         <button style={S.btnI} onClick={next}><I name="chevronRight" size={20} color={C.gold}/></button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-        {DAYS_JP.map(d=><div key={d} style={{textAlign:"center",fontSize:12,color:C.textMuted,padding:"8px 0",fontWeight:600}}>{d}</div>)}
-        {cells.map((day,i)=>{
+        {DAYS_JP.map(function(d){return <div key={d} style={{textAlign:"center",fontSize:12,color:C.textMuted,padding:"8px 0",fontWeight:600}}>{d}</div>;})}
+        {cells.map(function(day,i){
           if(day===null)return <div key={"e"+i}/>;
-          const ds=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
-          const iT=ds===todayStr,iS=ds===sel,hE=events.some(e=>e.date===ds);
-          return <div key={i} onClick={()=>setSel(ds)} style={{textAlign:"center",padding:"10px 0",cursor:"pointer",borderRadius:8,position:"relative",background:iS?C.gold:iT?C.bgHover:"transparent",color:iS?C.bg:iT?C.gold:C.text,fontWeight:iT||iS?700:400,fontSize:14,transition:"all 0.15s"}}>
+          var ds=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+          var iT=ds===todayStr, iS=ds===sel, hE=events.some(function(e){return e.date===ds;});
+          return <button key={i} onClick={function(){setSel(ds);}} style={{textAlign:"center",padding:"10px 0",cursor:"pointer",borderRadius:8,position:"relative",background:iS?C.gold:iT?C.bgHover:"transparent",color:iS?C.bg:iT?C.gold:C.text,fontWeight:iT||iS?700:400,fontSize:14,transition:"all 0.15s",border:"none",width:"100%"}}>
             {day}{hE&&<div style={{position:"absolute",bottom:4,left:"50%",transform:"translateX(-50%)",width:5,height:5,borderRadius:"50%",background:iS?C.bg:C.gold}}/>}
-          </div>;
+          </button>;
         })}
       </div>
     </div>
     <div style={{marginTop:16}}>
       <h3 style={{fontSize:16,fontWeight:600,color:C.textDim,marginBottom:12}}>{sel} の予定</h3>
-      {dEv.length===0?<div style={{...S.cardSm,...S.nd}}>この日の予定はありません</div>:dEv.map(ev=><div key={ev.id} style={{...S.cardSm,...S.fb}}>
-        <div style={S.fg(12)}>
+      {dEv.length===0?<div style={{background:C.bgCard,borderRadius:8,padding:16,border:"1px solid "+C.border,color:C.textMuted,textAlign:"center"}}>この日の予定はありません</div>:dEv.map(function(ev){return <div key={ev.id} style={{background:C.bgCard,borderRadius:8,padding:16,marginBottom:12,border:"1px solid "+C.border,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",gap:12,alignItems:"center"}}>
           <div style={{width:4,height:44,borderRadius:2,background:catColor[ev.category]||C.gold}}/>
           <div>
             <div style={{fontWeight:600,fontSize:14}}>{ev.title}</div>
-            <div style={{...S.fg(8),marginTop:4}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
               <span style={{fontSize:12,color:C.textMuted}}><I name="clock" size={12} color={C.textMuted}/> {ev.startTime} - {ev.endTime}</span>
               <span style={S.badge(catColor[ev.category])}>{catLabel[ev.category]}</span>
             </div>
             {ev.memo&&<div style={{fontSize:12,color:C.textDim,marginTop:4}}>{ev.memo}</div>}
           </div>
         </div>
-        <div style={S.fg(4)}>
-          <button style={S.btnI} onClick={()=>oE(ev)}><I name="edit" size={16} color={C.textMuted}/></button>
-          <button style={S.btnI} onClick={()=>rm(ev.id)}><I name="trash" size={16} color={C.red}/></button>
+        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+          <button style={S.btnI} onClick={function(){oE(ev);}}><I name="edit" size={16} color={C.textMuted}/></button>
+          <button style={S.btnI} onClick={function(){rm(ev.id);}}><I name="trash" size={16} color={C.red}/></button>
         </div>
-      </div>)}
+      </div>;})}
     </div>
-    {sm&&<Modal title={ee?"予定を編集":"予定を追加"} onClose={()=>setSm(false)}>
+    {sm&&<Modal title={ee?"予定を編集":"予定を追加"} onClose={function(){setSm(false);}}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div><label style={S.lbl}>タイトル</label><input style={S.inp} value={f.title} onChange={e=>sF({...f,title:e.target.value})} placeholder="予定のタイトル"/></div>
+        <div><label style={S.lbl}>タイトル</label><input style={S.inp} value={f.title} onChange={function(e){sF(Object.assign({},f,{title:e.target.value}));}} placeholder="予定のタイトル"/></div>
         <div style={S.g2}>
-          <div><label style={S.lbl}>開始時間</label><input style={S.inp} type="time" value={f.startTime} onChange={e=>sF({...f,startTime:e.target.value})}/></div>
-          <div><label style={S.lbl}>終了時間</label><input style={S.inp} type="time" value={f.endTime} onChange={e=>sF({...f,endTime:e.target.value})}/></div>
+          <div><label style={S.lbl}>開始</label><input style={S.inp} type="time" value={f.startTime} onChange={function(e){sF(Object.assign({},f,{startTime:e.target.value}));}}/></div>
+          <div><label style={S.lbl}>終了</label><input style={S.inp} type="time" value={f.endTime} onChange={function(e){sF(Object.assign({},f,{endTime:e.target.value}));}}/></div>
         </div>
-        <div><label style={S.lbl}>カテゴリ</label><select style={{...S.sel,width:"100%"}} value={f.category} onChange={e=>sF({...f,category:e.target.value})}><CatOptions/></select></div>
-        <div><label style={S.lbl}>メモ</label><input style={S.inp} value={f.memo} onChange={e=>sF({...f,memo:e.target.value})} placeholder="メモ（任意）"/></div>
-        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={save}>{ee?"更新":"追加"}</button>
+        <div><label style={S.lbl}>カテゴリ</label><select style={Object.assign({},S.sel,{width:"100%"})} value={f.category} onChange={function(e){sF(Object.assign({},f,{category:e.target.value}));}}><CatOptions/></select></div>
+        <div><label style={S.lbl}>メモ</label><input style={S.inp} value={f.memo} onChange={function(e){sF(Object.assign({},f,{memo:e.target.value}));}} placeholder="メモ（任意）"/></div>
+        <button style={Object.assign({},S.btn(),{width:"100%",justifyContent:"center",marginTop:8})} onClick={save}>{ee?"更新":"追加"}</button>
       </div>
     </Modal>}
   </div>;
 };
 
-/* ===== TASKS (優先度なし、6カテゴリ) ===== */
-const Tasks=({tasks,setTasks})=>{
-  const [sm,setSm]=useState(false);
-  const [et,setEt]=useState(null);
-  const [f,sF]=useState({title:"",deadline:todayStr,category:"university"});
-  const [fl,sFl]=useState("all");
-  const [sd,sSd]=useState(false);
-  const oA=()=>{setEt(null);sF({title:"",deadline:todayStr,category:"university"});setSm(true);};
-  const oE=t=>{setEt(t);sF({title:t.title,deadline:t.deadline,category:t.category});setSm(true);};
-  const save=()=>{if(!f.title)return;if(et){setTasks(p=>p.map(t=>t.id===et.id?{...t,...f}:t));}else{setTasks(p=>[...p,{id:gid(),...f,done:false}]);}setSm(false);};
-  const tog=id=>setTasks(p=>p.map(t=>t.id===id?{...t,done:!t.done}:t));
-  const rm=id=>setTasks(p=>p.filter(t=>t.id!==id));
-  const filt=tasks.filter(t=>sd||!t.done).filter(t=>fl==="all"||t.category===fl).sort((a,b)=>a.deadline.localeCompare(b.deadline));
+/* ===== TASKS ===== */
+var Tasks=function(props){
+  var tasks=props.tasks, setTasks=props.setTasks;
+  var _sm=useState(false), sm=_sm[0], setSm=_sm[1];
+  var _et=useState(null), et=_et[0], setEt=_et[1];
+  var _f=useState({title:"",deadline:todayStr,category:"university"}), f=_f[0], sF=_f[1];
+  var _fl=useState("all"), fl=_fl[0], sFl=_fl[1];
+  var _sd=useState(false), sd=_sd[0], sSd=_sd[1];
+  var oA=function(){setEt(null);sF({title:"",deadline:todayStr,category:"university"});setSm(true);};
+  var oE=function(t){setEt(t);sF({title:t.title,deadline:t.deadline,category:t.category});setSm(true);};
+  var save=function(){if(!f.title)return;if(et){setTasks(function(p){return p.map(function(t){return t.id===et.id?Object.assign({},t,f):t;});});}else{setTasks(function(p){return p.concat([Object.assign({id:gid()},f,{done:false})]);});}setSm(false);};
+  var tog=function(id){setTasks(function(p){return p.map(function(t){return t.id===id?Object.assign({},t,{done:!t.done}):t;});});};
+  var rm=function(id){setTasks(function(p){return p.filter(function(t){return t.id!==id;});});};
+  var filt=tasks.filter(function(t){return sd||!t.done;}).filter(function(t){return fl==="all"||t.category===fl;}).sort(function(a,b){return a.deadline.localeCompare(b.deadline);});
   return <div>
-    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>タスク管理</h2><button style={S.btn()} onClick={oA}><I name="plus" size={14} color={C.bg}/> タスクを追加</button></div>
-    <div style={{...S.fg(12),marginBottom:20,flexWrap:"wrap"}}>
-      <div style={S.fg(6)}><I name="filter" size={14} color={C.textMuted}/><select style={S.sel} value={fl} onChange={e=>sFl(e.target.value)}><option value="all">すべて</option><CatOptions/></select></div>
-      <label style={{...S.fg(6),cursor:"pointer",fontSize:13,color:C.textDim}}><input type="checkbox" checked={sd} onChange={()=>sSd(!sd)}/> 完了済みも表示</label>
+    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>タスク管理</h2><button style={S.btn()} onClick={oA}><I name="plus" size={14} color={C.bg}/> 追加</button></div>
+    <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:20,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}><I name="filter" size={14} color={C.textMuted}/><select style={S.sel} value={fl} onChange={function(e){sFl(e.target.value);}}><option value="all">すべて</option><CatOptions/></select></div>
+      <label style={{display:"flex",gap:6,alignItems:"center",cursor:"pointer",fontSize:13,color:C.textDim}}><input type="checkbox" checked={sd} onChange={function(){sSd(!sd);}}/> 完了済も表示</label>
     </div>
-    {filt.length===0?<div style={{...S.card,...S.nd}}>タスクはありません</div>:filt.map(t=><div key={t.id} style={{...S.cardSm,...S.fb,opacity:t.done?0.5:1,transition:"opacity 0.3s"}}>
-      <div style={S.fg(12)}>
-        <input type="checkbox" checked={t.done} onChange={()=>tog(t.id)}/>
+    {filt.length===0?<div style={Object.assign({},S.card,S.nd)}>タスクはありません</div>:filt.map(function(t){return <div key={t.id} style={{background:C.bgCard,borderRadius:8,padding:16,marginBottom:12,border:"1px solid "+C.border,display:"flex",justifyContent:"space-between",alignItems:"center",opacity:t.done?0.5:1}}>
+      <div style={{display:"flex",gap:12,alignItems:"center"}}>
+        <input type="checkbox" checked={t.done} onChange={function(){tog(t.id);}}/>
         <div>
           <div style={{fontWeight:600,fontSize:14,textDecoration:t.done?"line-through":"none"}}>{t.title}</div>
-          <div style={{...S.fg(8),marginTop:4}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
             <span style={S.badge(catColor[t.category])}>{catLabel[t.category]}</span>
             <span style={{fontSize:12,color:C.textMuted}}>{t.deadline}</span>
           </div>
         </div>
       </div>
-      <div style={S.fg(4)}>
-        <button style={S.btnI} onClick={()=>oE(t)}><I name="edit" size={16} color={C.textMuted}/></button>
-        <button style={S.btnI} onClick={()=>rm(t.id)}><I name="trash" size={16} color={C.red}/></button>
+      <div style={{display:"flex",gap:4,alignItems:"center"}}>
+        <button style={S.btnI} onClick={function(){oE(t);}}><I name="edit" size={16} color={C.textMuted}/></button>
+        <button style={S.btnI} onClick={function(){rm(t.id);}}><I name="trash" size={16} color={C.red}/></button>
       </div>
-    </div>)}
-    {sm&&<Modal title={et?"タスクを編集":"タスクを追加"} onClose={()=>setSm(false)}>
+    </div>;})}
+    {sm&&<Modal title={et?"タスクを編集":"タスクを追加"} onClose={function(){setSm(false);}}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div><label style={S.lbl}>タスク名</label><input style={S.inp} value={f.title} onChange={e=>sF({...f,title:e.target.value})} placeholder="タスク名"/></div>
+        <div><label style={S.lbl}>タスク名</label><input style={S.inp} value={f.title} onChange={function(e){sF(Object.assign({},f,{title:e.target.value}));}} placeholder="タスク名"/></div>
         <div style={S.g2}>
-          <div><label style={S.lbl}>期限</label><input style={S.inp} type="date" value={f.deadline} onChange={e=>sF({...f,deadline:e.target.value})}/></div>
-          <div><label style={S.lbl}>カテゴリ</label><select style={{...S.sel,width:"100%"}} value={f.category} onChange={e=>sF({...f,category:e.target.value})}><CatOptions/></select></div>
+          <div><label style={S.lbl}>期限</label><input style={S.inp} type="date" value={f.deadline} onChange={function(e){sF(Object.assign({},f,{deadline:e.target.value}));}}/></div>
+          <div><label style={S.lbl}>カテゴリ</label><select style={Object.assign({},S.sel,{width:"100%"})} value={f.category} onChange={function(e){sF(Object.assign({},f,{category:e.target.value}));}}><CatOptions/></select></div>
         </div>
-        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={save}>{et?"更新":"追加"}</button>
+        <button style={Object.assign({},S.btn(),{width:"100%",justifyContent:"center",marginTop:8})} onClick={save}>{et?"更新":"追加"}</button>
       </div>
     </Modal>}
   </div>;
 };
 
 /* ===== NOTES ===== */
-const Notes=({notes,setNotes})=>{
-  const [sm,setSm]=useState(false);
-  const [en,setEn]=useState(null);
-  const [f,sF]=useState({date:todayStr,content:"",tagInput:""});
-  const [tgs,sTgs]=useState([]);
-  const [sq,sSq]=useState("");
-  const oA=()=>{setEn(null);sF({date:todayStr,content:"",tagInput:""});sTgs([]);setSm(true);};
-  const oE=n=>{setEn(n);sF({date:n.date,content:n.content,tagInput:""});sTgs([...n.tags]);setSm(true);};
-  const aT=()=>{const t=f.tagInput.trim();if(t&&!tgs.includes(t)){sTgs([...tgs,t]);sF({...f,tagInput:""});}};
-  const rT=t=>sTgs(tgs.filter(x=>x!==t));
-  const save=()=>{if(!f.content)return;if(en){setNotes(p=>p.map(n=>n.id===en.id?{...n,date:f.date,content:f.content,tags:tgs}:n));}else{setNotes(p=>[...p,{id:gid(),date:f.date,content:f.content,tags:tgs}]);}setSm(false);};
-  const rm=id=>setNotes(p=>p.filter(n=>n.id!==id));
-  const filt=notes.filter(n=>{if(!sq)return true;const q=sq.toLowerCase();return n.content.toLowerCase().includes(q)||n.tags.some(t=>t.toLowerCase().includes(q));}).sort((a,b)=>b.date.localeCompare(a.date));
+var Notes=function(props){
+  var notes=props.notes, setNotes=props.setNotes;
+  var _sm=useState(false), sm=_sm[0], setSm=_sm[1];
+  var _en=useState(null), en=_en[0], setEn=_en[1];
+  var _f=useState({date:todayStr,content:"",tagInput:""}), f=_f[0], sF=_f[1];
+  var _tgs=useState([]), tgs=_tgs[0], sTgs=_tgs[1];
+  var _sq=useState(""), sq=_sq[0], sSq=_sq[1];
+  var oA=function(){setEn(null);sF({date:todayStr,content:"",tagInput:""});sTgs([]);setSm(true);};
+  var oE=function(n){setEn(n);sF({date:n.date,content:n.content,tagInput:""});sTgs([].concat(n.tags));setSm(true);};
+  var aT=function(){var t=f.tagInput.trim();if(t&&tgs.indexOf(t)===-1){sTgs(tgs.concat([t]));sF(Object.assign({},f,{tagInput:""}));}};
+  var rT=function(t){sTgs(tgs.filter(function(x){return x!==t;}));};
+  var save=function(){if(!f.content)return;if(en){setNotes(function(p){return p.map(function(n){return n.id===en.id?Object.assign({},n,{date:f.date,content:f.content,tags:tgs}):n;});});}else{setNotes(function(p){return p.concat([{id:gid(),date:f.date,content:f.content,tags:tgs}]);});}setSm(false);};
+  var rm=function(id){setNotes(function(p){return p.filter(function(n){return n.id!==id;});});};
+  var filt=notes.filter(function(n){if(!sq)return true;var q=sq.toLowerCase();return n.content.toLowerCase().indexOf(q)!==-1||n.tags.some(function(t){return t.toLowerCase().indexOf(q)!==-1;});}).sort(function(a,b){return b.date.localeCompare(a.date);});
   return <div>
-    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>日記・メモ</h2><button style={S.btn()} onClick={oA}><I name="plus" size={14} color={C.bg}/> 新しいメモ</button></div>
-    <div style={{...S.fg(8),marginBottom:20}}><I name="search" size={16} color={C.textMuted}/><input style={{...S.inp,maxWidth:320}} placeholder="メモを検索..." value={sq} onChange={e=>sSq(e.target.value)}/></div>
-    {filt.length===0?<div style={{...S.card,...S.nd}}>メモがありません</div>:filt.map(n=><div key={n.id} style={S.card}>
-      <div style={S.fb}><span style={{fontSize:13,color:C.textMuted}}>{n.date}</span><div style={S.fg(4)}><button style={S.btnI} onClick={()=>oE(n)}><I name="edit" size={16} color={C.textMuted}/></button><button style={S.btnI} onClick={()=>rm(n.id)}><I name="trash" size={16} color={C.red}/></button></div></div>
+    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>日記・メモ</h2><button style={S.btn()} onClick={oA}><I name="plus" size={14} color={C.bg}/> 新規</button></div>
+    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:20}}><I name="search" size={16} color={C.textMuted}/><input style={Object.assign({},S.inp,{maxWidth:320})} placeholder="メモを検索..." value={sq} onChange={function(e){sSq(e.target.value);}}/></div>
+    {filt.length===0?<div style={Object.assign({},S.card,S.nd)}>メモがありません</div>:filt.map(function(n){return <div key={n.id} style={S.card}>
+      <div style={S.fb}><span style={{fontSize:13,color:C.textMuted}}>{n.date}</span><div style={{display:"flex",gap:4,alignItems:"center"}}><button style={S.btnI} onClick={function(){oE(n);}}><I name="edit" size={16} color={C.textMuted}/></button><button style={S.btnI} onClick={function(){rm(n.id);}}><I name="trash" size={16} color={C.red}/></button></div></div>
       <div style={{fontSize:14,lineHeight:1.8,marginTop:8,whiteSpace:"pre-wrap"}}>{n.content}</div>
-      {n.tags.length>0&&<div style={{...S.fg(6),marginTop:12,flexWrap:"wrap"}}><I name="tag" size={12} color={C.textMuted}/>{n.tags.map(t=><span key={t} style={S.tg}>{t}</span>)}</div>}
-    </div>)}
-    {sm&&<Modal title={en?"メモを編集":"新しいメモ"} onClose={()=>setSm(false)}>
+      {n.tags.length>0&&<div style={{display:"flex",gap:6,alignItems:"center",marginTop:12,flexWrap:"wrap"}}><I name="tag" size={12} color={C.textMuted}/>{n.tags.map(function(t){return <span key={t} style={S.tg}>{t}</span>;})}</div>}
+    </div>;})}
+    {sm&&<Modal title={en?"メモを編集":"新しいメモ"} onClose={function(){setSm(false);}}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div><label style={S.lbl}>日付</label><input style={S.inp} type="date" value={f.date} onChange={e=>sF({...f,date:e.target.value})}/></div>
-        <div><label style={S.lbl}>内容</label><textarea style={S.ta} value={f.content} onChange={e=>sF({...f,content:e.target.value})} placeholder="自由に書いてください..." rows={5}/></div>
+        <div><label style={S.lbl}>日付</label><input style={S.inp} type="date" value={f.date} onChange={function(e){sF(Object.assign({},f,{date:e.target.value}));}}/></div>
+        <div><label style={S.lbl}>内容</label><textarea style={S.ta} value={f.content} onChange={function(e){sF(Object.assign({},f,{content:e.target.value}));}} placeholder="自由に書いてください..." rows={5}/></div>
         <div>
           <label style={S.lbl}>タグ</label>
-          <div style={S.fg(8)}><input style={{...S.inp,flex:1}} value={f.tagInput} onChange={e=>sF({...f,tagInput:e.target.value})} placeholder="タグを入力" onKeyDown={e=>e.key==="Enter"&&(e.preventDefault(),aT())}/><button style={S.btn()} onClick={aT}>追加</button></div>
-          {tgs.length>0&&<div style={{...S.fg(6),marginTop:8,flexWrap:"wrap"}}>{tgs.map(t=><span key={t} style={{...S.tg,cursor:"pointer"}} onClick={()=>rT(t)}>{t} ✕</span>)}</div>}
+          <div style={{display:"flex",gap:8,alignItems:"center"}}><input style={Object.assign({},S.inp,{flex:1})} value={f.tagInput} onChange={function(e){sF(Object.assign({},f,{tagInput:e.target.value}));}} placeholder="タグを入力" onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();aT();}}}/><button style={S.btn()} onClick={aT}>追加</button></div>
+          {tgs.length>0&&<div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>{tgs.map(function(t){return <button key={t} style={Object.assign({},S.tg,{cursor:"pointer",border:"none",background:C.bgHover})} onClick={function(){rT(t);}}>{t} ✕</button>;})}</div>}
         </div>
-        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={save}>{en?"更新":"保存"}</button>
+        <button style={Object.assign({},S.btn(),{width:"100%",justifyContent:"center",marginTop:8})} onClick={save}>{en?"更新":"保存"}</button>
       </div>
     </Modal>}
   </div>;
 };
 
-/* ===== HABITS (カテゴリ付き) ===== */
-const Habits=({habits,setHabits,habitLog,setHabitLog})=>{
-  const [sm,setSm]=useState(false);
-  const [f,sF]=useState({name:"",frequency:"daily",category:"hobby"});
-  const l7=Array.from({length:7},(_,i)=>{const d=new Date(today.getTime()-(6-i)*86400000);return{date:fmt(d),dn:DAYS_JP[d.getDay()],num:d.getDate()};});
-  const togH=(hid,dt)=>setHabitLog(p=>{const n={...p};if(!n[hid])n[hid]={};n[hid]={...n[hid],[dt]:!n[hid][dt]};return n;});
-  const addH=()=>{if(!f.name)return;const id=gid();setHabits(p=>[...p,{id,name:f.name,frequency:f.frequency,category:f.category}]);setHabitLog(p=>({...p,[id]:{}}));sF({name:"",frequency:"daily",category:"hobby"});setSm(false);};
-  const rmH=id=>{setHabits(p=>p.filter(h=>h.id!==id));setHabitLog(p=>{const n={...p};delete n[id];return n;});};
-  const streak=hid=>{let s=0;for(let i=0;i<365;i++){if(habitLog[hid]?.[fmt(new Date(today.getTime()-i*86400000))])s++;else break;}return s;};
-  const oR=habits.length>0?Math.round(habits.reduce((s,h)=>s+l7.filter(d=>habitLog[h.id]?.[d.date]).length,0)/(habits.length*7)*100):0;
+/* ===== HABITS ===== */
+var Habits=function(props){
+  var habits=props.habits, setHabits=props.setHabits, habitLog=props.habitLog, setHabitLog=props.setHabitLog;
+  var _sm=useState(false), sm=_sm[0], setSm=_sm[1];
+  var _f=useState({name:"",frequency:"daily",category:"hobby"}), f=_f[0], sF=_f[1];
+  var l7=Array.from({length:7},function(_,i){var d=new Date(today.getTime()-(6-i)*86400000);return{date:fmt(d),dn:DAYS_JP[d.getDay()],num:d.getDate()};});
+  var togH=function(hid,dt){setHabitLog(function(p){var n=Object.assign({},p);if(!n[hid])n[hid]={};n[hid]=Object.assign({},n[hid]);n[hid][dt]=!n[hid][dt];return n;});};
+  var addH=function(){if(!f.name)return;var id=gid();setHabits(function(p){return p.concat([{id:id,name:f.name,frequency:f.frequency,category:f.category}]);});setHabitLog(function(p){var n=Object.assign({},p);n[id]={};return n;});sF({name:"",frequency:"daily",category:"hobby"});setSm(false);};
+  var rmH=function(id){setHabits(function(p){return p.filter(function(h){return h.id!==id;});});setHabitLog(function(p){var n=Object.assign({},p);delete n[id];return n;});};
+  var streak=function(hid){var s=0;for(var i=0;i<365;i++){if(sa(sa(habitLog,hid),fmt(new Date(today.getTime()-i*86400000))))s++;else break;}return s;};
+  var oR=habits.length>0?Math.round(habits.reduce(function(s,h){return s+l7.filter(function(d){return sa(sa(habitLog,h.id),d.date);}).length;},0)/(habits.length*7)*100):0;
   return <div>
-    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>習慣トラッカー</h2><button style={S.btn()} onClick={()=>setSm(true)}><I name="plus" size={14} color={C.bg}/> 習慣を追加</button></div>
-    <div style={{...S.card,marginBottom:24}}>
-      <div style={{...S.fg(8),marginBottom:12}}><I name="barChart" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>週間達成率</span></div>
+    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>習慣トラッカー</h2><button style={S.btn()} onClick={function(){setSm(true);}}><I name="plus" size={14} color={C.bg}/> 追加</button></div>
+    <div style={Object.assign({},S.card,{marginBottom:24})}>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}><I name="barChart" size={18} color={C.gold}/><span style={{fontWeight:600,color:C.gold}}>週間達成率</span></div>
       <div style={{fontSize:48,fontWeight:800,color:oR>=80?C.green:oR>=50?C.gold:C.textDim}}>{oR}%</div>
       <div style={{background:C.bgHover,borderRadius:8,height:10,marginTop:8,overflow:"hidden"}}><div style={{background:"linear-gradient(90deg,"+C.gold+","+C.goldBright+")",height:"100%",width:oR+"%",borderRadius:8,transition:"width 0.5s"}}/></div>
     </div>
-    <div style={{...S.card,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      <div style={{display:"grid",gridTemplateColumns:"160px repeat(7,44px) 50px",gap:4,alignItems:"center",minWidth:560}}>
+    <div className="scroll-area-x" style={Object.assign({},S.card,{overflowX:"auto",WebkitOverflowScrolling:"touch"})}>
+      <div style={{display:"grid",gridTemplateColumns:"140px repeat(7,44px) 50px",gap:4,alignItems:"center",minWidth:520}}>
         <div style={{fontSize:12,color:C.textMuted,fontWeight:600}}>習慣</div>
-        {l7.map(d=><div key={d.date} style={{textAlign:"center"}}><div style={{fontSize:10,color:C.textMuted}}>{d.dn}</div><div style={{fontSize:13,fontWeight:d.date===todayStr?700:400,color:d.date===todayStr?C.gold:C.text}}>{d.num}</div></div>)}
+        {l7.map(function(d){return <div key={d.date} style={{textAlign:"center"}}><div style={{fontSize:10,color:C.textMuted}}>{d.dn}</div><div style={{fontSize:13,fontWeight:d.date===todayStr?700:400,color:d.date===todayStr?C.gold:C.text}}>{d.num}</div></div>;})}
         <div style={{fontSize:10,color:C.textMuted,textAlign:"center"}}>連続</div>
-        {habits.map(h=><Fragment key={h.id}>
-          <div style={{...S.fb,paddingRight:4}}>
+        {habits.map(function(h){return <Fragment key={h.id}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingRight:4}}>
             <div>
               <span style={{fontSize:13,fontWeight:500}}>{h.name}</span>
-              <span style={{...S.badge(catColor[h.category]||C.gold),marginLeft:6,fontSize:10}}>{catLabel[h.category]||""}</span>
+              <span style={Object.assign({},S.badge(catColor[h.category]||C.gold),{marginLeft:6,fontSize:10})}>{catLabel[h.category]||""}</span>
             </div>
-            <button style={S.btnI} onClick={()=>rmH(h.id)}><I name="trash" size={12} color={C.red}/></button>
+            <button style={S.btnI} onClick={function(){rmH(h.id);}}><I name="trash" size={12} color={C.red}/></button>
           </div>
-          {l7.map(d=>{const dn=habitLog[h.id]?.[d.date];return <div key={d.date} style={{display:"flex",justifyContent:"center"}}><div onClick={()=>togH(h.id,d.date)} style={{width:28,height:28,borderRadius:6,cursor:"pointer",transition:"all 0.2s",background:dn?C.gold:C.bgHover,border:"2px solid "+(dn?C.gold:C.border),display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:dn?C.bg:"transparent",fontWeight:700}}>{dn?"✓":""}</div></div>;})}
+          {l7.map(function(d){var dn=sa(sa(habitLog,h.id),d.date);return <div key={d.date} style={{display:"flex",justifyContent:"center"}}><button onClick={function(){togH(h.id,d.date);}} style={{width:32,height:32,borderRadius:6,cursor:"pointer",transition:"all 0.2s",background:dn?C.gold:C.bgHover,border:"2px solid "+(dn?C.gold:C.border),display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:dn?C.bg:"transparent",fontWeight:700}}>{dn?"\u2713":""}</button></div>;})}
           <div style={{textAlign:"center",fontSize:14,fontWeight:700,color:streak(h.id)>0?C.gold:C.textMuted}}>{streak(h.id)}日</div>
-        </Fragment>)}
+        </Fragment>;})}
       </div>
       {habits.length===0&&<div style={S.nd}>習慣を追加してください</div>}
     </div>
-    {sm&&<Modal title="習慣を追加" onClose={()=>setSm(false)}>
+    {sm&&<Modal title="習慣を追加" onClose={function(){setSm(false);}}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div><label style={S.lbl}>習慣名</label><input style={S.inp} value={f.name} onChange={e=>sF({...f,name:e.target.value})} placeholder="例：読書、散歩、英語学習"/></div>
+        <div><label style={S.lbl}>習慣名</label><input style={S.inp} value={f.name} onChange={function(e){sF(Object.assign({},f,{name:e.target.value}));}} placeholder="例：読書、散歩"/></div>
         <div style={S.g2}>
-          <div><label style={S.lbl}>頻度</label><select style={{...S.sel,width:"100%"}} value={f.frequency} onChange={e=>sF({...f,frequency:e.target.value})}><option value="daily">毎日</option><option value="weekdays">平日のみ</option></select></div>
-          <div><label style={S.lbl}>カテゴリ</label><select style={{...S.sel,width:"100%"}} value={f.category} onChange={e=>sF({...f,category:e.target.value})}><CatOptions/></select></div>
+          <div><label style={S.lbl}>頻度</label><select style={Object.assign({},S.sel,{width:"100%"})} value={f.frequency} onChange={function(e){sF(Object.assign({},f,{frequency:e.target.value}));}}><option value="daily">毎日</option><option value="weekdays">平日</option></select></div>
+          <div><label style={S.lbl}>カテゴリ</label><select style={Object.assign({},S.sel,{width:"100%"})} value={f.category} onChange={function(e){sF(Object.assign({},f,{category:e.target.value}));}}><CatOptions/></select></div>
         </div>
-        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={addH}>追加</button>
+        <button style={Object.assign({},S.btn(),{width:"100%",justifyContent:"center",marginTop:8})} onClick={addH}>追加</button>
       </div>
     </Modal>}
   </div>;
 };
 
-/* ===== ROADMAP (長期計画) ===== */
-const Roadmap=({roadmapItems,setRoadmapItems,roadmapRanges,setRoadmapRanges})=>{
-  /* Helper: month key "2026-05" */
-  const mkKey=(y,m)=>y+"-"+String(m).padStart(2,"0");
-  const parseKey=(k)=>{const p=k.split("-");return{y:parseInt(p[0]),m:parseInt(p[1])};};
-
-  /* Timeline: 2026-04 to 2029-03 (36 months) */
-  const START_Y=2026, START_M=4, END_Y=2029, END_M=3;
-  const allMonths=useMemo(()=>{
-    const arr=[];
-    let y=START_Y, m=START_M;
+/* ===== ROADMAP ===== */
+var Roadmap=function(props){
+  var roadmapItems=props.roadmapItems, setRoadmapItems=props.setRoadmapItems;
+  var roadmapRanges=props.roadmapRanges, setRoadmapRanges=props.setRoadmapRanges;
+  var mkKey=function(y,m){return y+"-"+String(m).padStart(2,"0");};
+  var START_Y=2026, START_M=4, END_Y=2029, END_M=3;
+  var allMonths=useMemo(function(){
+    var arr=[];var y=START_Y, m=START_M;
     while(y<END_Y||(y===END_Y&&m<=END_M)){
-      arr.push({key:mkKey(y,m),y,m,label:y+"年"+m+"月"});
+      arr.push({key:mkKey(y,m),y:y,m:m,label:y+"年"+m+"月"});
       m++;if(m>12){m=1;y++;}
     }
     return arr;
   },[]);
-
-  const monthIdx=(key)=>allMonths.findIndex(mo=>mo.key===key);
-
-  /* Current month highlight */
-  const curMonthKey = mkKey(today.getFullYear(), today.getMonth()+1);
-
-  /* Modals */
-  const [itemModal,setItemModal]=useState(false);
-  const [rangeModal,setRangeModal]=useState(false);
-  const [editItem,setEditItem]=useState(null);
-  const [editRange,setEditRange]=useState(null);
-
-  /* Item form */
-  const [iF,setIF]=useState({month:curMonthKey,text:"",category:"university"});
-  /* Range form */
-  const [rF,setRF]=useState({startMonth:curMonthKey,endMonth:curMonthKey,text:"",category:"university"});
-
-  /* Month select options */
-  const MonthOpts=()=>allMonths.map(mo=><option key={mo.key} value={mo.key}>{mo.label}</option>);
-
-  const openAddItem=(monthKey)=>{setEditItem(null);setIF({month:monthKey||curMonthKey,text:"",category:"university"});setItemModal(true);};
-  const openEditItem=(item)=>{setEditItem(item);setIF({month:item.month,text:item.text,category:item.category});setItemModal(true);};
-  const saveItem=()=>{
+  var monthIdx=function(key){return allMonths.findIndex(function(mo){return mo.key===key;});};
+  var curMonthKey=mkKey(today.getFullYear(),today.getMonth()+1);
+  var _itemModal=useState(false), itemModal=_itemModal[0], setItemModal=_itemModal[1];
+  var _rangeModal=useState(false), rangeModal=_rangeModal[0], setRangeModal=_rangeModal[1];
+  var _editItem=useState(null), editItem=_editItem[0], setEditItem=_editItem[1];
+  var _editRange=useState(null), editRange=_editRange[0], setEditRange=_editRange[1];
+  var _iF=useState({month:curMonthKey,text:"",category:"university"}), iF=_iF[0], setIF=_iF[1];
+  var _rF=useState({startMonth:curMonthKey,endMonth:curMonthKey,text:"",category:"university"}), rF=_rF[0], setRF=_rF[1];
+  var MonthOpts=function(){return allMonths.map(function(mo){return <option key={mo.key} value={mo.key}>{mo.label}</option>;});};
+  var openAddItem=function(mk){setEditItem(null);setIF({month:mk||curMonthKey,text:"",category:"university"});setItemModal(true);};
+  var openEditItem=function(item){setEditItem(item);setIF({month:item.month,text:item.text,category:item.category});setItemModal(true);};
+  var saveItem=function(){
     if(!iF.text)return;
-    if(editItem){setRoadmapItems(p=>p.map(it=>it.id===editItem.id?{...it,...iF}:it));}
-    else{setRoadmapItems(p=>[...p,{id:gid(),...iF}]);}
+    if(editItem){setRoadmapItems(function(p){return p.map(function(it){return it.id===editItem.id?Object.assign({},it,iF):it;});});}
+    else{setRoadmapItems(function(p){return p.concat([Object.assign({id:gid()},iF)]);});}
     setItemModal(false);
   };
-  const rmItem=id=>setRoadmapItems(p=>p.filter(it=>it.id!==id));
-
-  const openAddRange=()=>{setEditRange(null);setRF({startMonth:curMonthKey,endMonth:mkKey(START_Y,START_M+3>12?1:START_M+3),text:"",category:"university"});setRangeModal(true);};
-  const openEditRange=(r)=>{setEditRange(r);setRF({startMonth:r.startMonth,endMonth:r.endMonth,text:r.text,category:r.category});setRangeModal(true);};
-  const saveRange=()=>{
+  var rmItem=function(id){setRoadmapItems(function(p){return p.filter(function(it){return it.id!==id;});});};
+  var openAddRange=function(){setEditRange(null);setRF({startMonth:curMonthKey,endMonth:curMonthKey,text:"",category:"university"});setRangeModal(true);};
+  var openEditRange=function(r){setEditRange(r);setRF({startMonth:r.startMonth,endMonth:r.endMonth,text:r.text,category:r.category});setRangeModal(true);};
+  var saveRange=function(){
     if(!rF.text)return;
-    const si=monthIdx(rF.startMonth),ei=monthIdx(rF.endMonth);
+    var si=monthIdx(rF.startMonth), ei=monthIdx(rF.endMonth);
     if(si<0||ei<0||si>ei)return;
-    if(editRange){setRoadmapRanges(p=>p.map(r=>r.id===editRange.id?{...r,...rF}:r));}
-    else{setRoadmapRanges(p=>[...p,{id:gid(),...rF}]);}
+    if(editRange){setRoadmapRanges(function(p){return p.map(function(r){return r.id===editRange.id?Object.assign({},r,rF):r;});});}
+    else{setRoadmapRanges(function(p){return p.concat([Object.assign({id:gid()},rF)]);});}
     setRangeModal(false);
   };
-  const rmRange=id=>setRoadmapRanges(p=>p.filter(r=>r.id!==id));
-
-  /* Group items by month */
-  const itemsByMonth = useMemo(()=>{
-    const map={};
-    roadmapItems.forEach(it=>{if(!map[it.month])map[it.month]=[];map[it.month].push(it);});
+  var rmRange=function(id){setRoadmapRanges(function(p){return p.filter(function(r){return r.id!==id;});});};
+  var itemsByMonth=useMemo(function(){
+    var map={};
+    roadmapItems.forEach(function(it){if(!map[it.month])map[it.month]=[];map[it.month].push(it);});
     return map;
   },[roadmapItems]);
-
-  /* Calculate range bars with lane assignment to avoid overlap */
-  const sortedRanges = useMemo(()=>{
-    return [...roadmapRanges].sort((a,b)=>{
-      const ai=monthIdx(a.startMonth),bi=monthIdx(b.startMonth);
+  var sortedRanges=useMemo(function(){
+    return [].concat(roadmapRanges).sort(function(a,b){
+      var ai=monthIdx(a.startMonth), bi=monthIdx(b.startMonth);
       if(ai!==bi)return ai-bi;
       return monthIdx(b.endMonth)-monthIdx(a.endMonth);
     });
   },[roadmapRanges,allMonths]);
-
-  /* Assign lanes */
-  const rangeLanes = useMemo(()=>{
-    const lanes=[];
-    const assignments=new Map();
-    sortedRanges.forEach(r=>{
-      const si=monthIdx(r.startMonth),ei=monthIdx(r.endMonth);
-      let lane=0;
+  var rangeLanes=useMemo(function(){
+    var assignments=new Map();var laneCount=0;
+    sortedRanges.forEach(function(r){
+      var si=monthIdx(r.startMonth), ei=monthIdx(r.endMonth);
+      var lane=0;
       while(true){
-        let conflict=false;
-        for(const [rid,{si:osi,ei:oei,lane:ol}] of assignments){
-          if(ol===lane&&!(ei<osi||si>oei)){conflict=true;break;}
-        }
-        if(!conflict)break;
-        lane++;
+        var conflict=false;
+        assignments.forEach(function(val){
+          if(val.lane===lane&&!(ei<val.si||si>val.ei))conflict=true;
+        });
+        if(!conflict)break;lane++;
       }
-      assignments.set(r.id,{si,ei,lane});
-      if(lane>=lanes.length)lanes.push([]);
-      lanes[lane].push(r);
+      assignments.set(r.id,{si:si,ei:ei,lane:lane});
+      if(lane+1>laneCount)laneCount=lane+1;
     });
-    return {assignments,laneCount:lanes.length};
+    return {assignments:assignments,laneCount:laneCount};
   },[sortedRanges,allMonths]);
-
-  const ROW_H=64;
-  const RANGE_BAR_H=28;
-  const RANGE_LANE_GAP=4;
-  const rangeAreaH = rangeLanes.laneCount>0 ? rangeLanes.laneCount*(RANGE_BAR_H+RANGE_LANE_GAP) : 0;
-
+  var RANGE_BAR_H=28, RANGE_LANE_GAP=4;
+  var rangeAreaH=rangeLanes.laneCount>0?rangeLanes.laneCount*(RANGE_BAR_H+RANGE_LANE_GAP):0;
   return <div>
     <div style={S.fb}>
       <h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>長期計画</h2>
-      <div style={S.fg(8)}>
-        <button style={S.btn()} onClick={()=>openAddItem(null)}><I name="plus" size={14} color={C.bg}/> 予定追加</button>
-        <button style={S.btnO} onClick={openAddRange}>⇔ 期間追加</button>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <button style={S.btn()} onClick={function(){openAddItem(null);}}><I name="plus" size={14} color={C.bg}/> 追加</button>
+        <button style={S.btnO} onClick={openAddRange}>⇔ 期間</button>
       </div>
     </div>
-    <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>2026年4月 〜 2029年3月 のロードマップ</div>
-
-    {/* Range bars area */}
-    {rangeAreaH>0&&<div style={{...S.card,padding:16,marginBottom:0,borderBottomLeftRadius:0,borderBottomRightRadius:0,borderBottom:"none",position:"relative",overflow:"hidden"}}>
+    <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>2026年4月 〜 2029年3月</div>
+    {rangeAreaH>0&&<div style={{background:C.bgCard,borderRadius:"12px 12px 0 0",padding:16,border:"1px solid "+C.border,borderBottom:"none",position:"relative",overflow:"hidden"}}>
       <div style={{fontSize:12,color:C.textMuted,marginBottom:8,fontWeight:600}}>期間バー（⇔）</div>
       <div style={{position:"relative",height:rangeAreaH}}>
-        {sortedRanges.map(r=>{
-          const info=rangeLanes.assignments.get(r.id);
+        {sortedRanges.map(function(r){
+          var info=rangeLanes.assignments.get(r.id);
           if(!info)return null;
-          const {si,ei,lane}=info;
-          const totalM=allMonths.length;
-          const leftPct=(si/totalM*100)+"%";
-          const widthPct=((ei-si+1)/totalM*100)+"%";
-          const top=lane*(RANGE_BAR_H+RANGE_LANE_GAP);
-          const color=catColor[r.category]||C.gold;
-          return <div key={r.id} style={{position:"absolute",left:leftPct,width:widthPct,top,height:RANGE_BAR_H,background:color+"33",border:"2px solid "+color,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap"}} onClick={()=>openEditRange(r)}>
-            <span style={{fontSize:11,fontWeight:700,color,padding:"0 8px",overflow:"hidden",textOverflow:"ellipsis"}}>
-              ⇔ {r.text}
-            </span>
-            <button style={{...S.btnI,position:"absolute",right:2,top:2,padding:2}} onClick={e=>{e.stopPropagation();rmRange(r.id);}}><I name="x" size={12} color={color}/></button>
-          </div>;
+          var si=info.si, ei=info.ei, lane=info.lane;
+          var totalM=allMonths.length;
+          var leftPct=(si/totalM*100)+"%";
+          var widthPct=((ei-si+1)/totalM*100)+"%";
+          var top=lane*(RANGE_BAR_H+RANGE_LANE_GAP);
+          var color=catColor[r.category]||C.gold;
+          return <button key={r.id} style={{position:"absolute",left:leftPct,width:widthPct,top:top,height:RANGE_BAR_H,background:color+"33",border:"2px solid "+color,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap",padding:0}} onClick={function(){openEditRange(r);}}>
+            <span style={{fontSize:11,fontWeight:700,color:color,padding:"0 28px 0 8px",overflow:"hidden",textOverflow:"ellipsis"}}>⇔ {r.text}</span>
+            <button style={{position:"absolute",right:2,top:2,padding:2,background:"transparent",border:"none",cursor:"pointer"}} onClick={function(e){e.stopPropagation();rmRange(r.id);}}><I name="x" size={12} color={color}/></button>
+          </button>;
         })}
       </div>
     </div>}
-
-    {/* Monthly timeline */}
-    <div style={{...S.card,padding:0,borderTopLeftRadius:rangeAreaH>0?0:12,borderTopRightRadius:rangeAreaH>0?0:12,overflow:"hidden"}}>
-      {allMonths.map((mo,idx)=>{
-        const isCur=mo.key===curMonthKey;
-        const isPast=mo.key<curMonthKey;
-        const items=itemsByMonth[mo.key]||[];
-        const isYearStart=mo.m===4; /* 年度始め */
+    <div style={{background:C.bgCard,borderRadius:rangeAreaH>0?"0 0 12px 12px":"12px",border:"1px solid "+C.border,overflow:"hidden"}}>
+      {allMonths.map(function(mo,idx){
+        var isCur=mo.key===curMonthKey;
+        var isPast=mo.key<curMonthKey;
+        var items=itemsByMonth[mo.key]||[];
+        var isYearStart=mo.m===4;
         return <Fragment key={mo.key}>
           {isYearStart&&idx>0&&<div style={{background:C.gold+"22",padding:"8px 20px",borderTop:"1px solid "+C.gold+"44",borderBottom:"1px solid "+C.gold+"44"}}>
             <span style={{fontSize:13,fontWeight:700,color:C.gold}}>{mo.y}年度</span>
           </div>}
-          <div style={{display:"flex",borderBottom:"1px solid "+C.border,minHeight:ROW_H,opacity:isPast?0.5:1,background:isCur?C.bgHover+"88":"transparent",transition:"background 0.2s"}}
-               onMouseEnter={e=>{if(!isCur)e.currentTarget.style.background=C.bgHover+"44";}}
-               onMouseLeave={e=>{if(!isCur)e.currentTarget.style.background="transparent";}}>
-            {/* Month label */}
-            <div style={{width:80,minWidth:80,padding:"12px 0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRight:"1px solid "+C.border,flexShrink:0}}>
-              <div style={{fontSize:22,fontWeight:700,color:isCur?C.gold:C.text}}>{mo.m}</div>
-              <div style={{fontSize:10,color:isCur?C.gold:C.textMuted}}>{mo.y}</div>
-              {isCur&&<div style={{width:6,height:6,borderRadius:"50%",background:C.gold,marginTop:4}}/>}
+          <div style={{display:"flex",borderBottom:"1px solid "+C.border,minHeight:56,opacity:isPast?0.5:1,background:isCur?"rgba(51,65,85,0.5)":"transparent"}}>
+            <div style={{width:72,minWidth:72,padding:"10px 0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRight:"1px solid "+C.border,flexShrink:0}}>
+              <div style={{fontSize:20,fontWeight:700,color:isCur?C.gold:C.text}}>{mo.m}</div>
+              <div style={{fontSize:9,color:isCur?C.gold:C.textMuted}}>{mo.y}</div>
+              {isCur&&<div style={{width:6,height:6,borderRadius:"50%",background:C.gold,marginTop:2}}/>}
             </div>
-
-            {/* Items area */}
-            <div style={{flex:1,padding:"8px 16px",display:"flex",flexDirection:"column",gap:6,justifyContent:"center",minHeight:ROW_H}}>
+            <div style={{flex:1,padding:"6px 12px",display:"flex",flexDirection:"column",gap:4,justifyContent:"center",minHeight:56}}>
               {items.length===0?
                 <div style={{fontSize:12,color:C.textMuted,fontStyle:"italic"}}>—</div>
-              :items.map(it=><div key={it.id} style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{width:4,height:20,borderRadius:2,background:catColor[it.category]||C.gold,flexShrink:0}}/>
+              :items.map(function(it){return <div key={it.id} style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:3,height:18,borderRadius:2,background:catColor[it.category]||C.gold,flexShrink:0}}/>
                 <span style={{fontSize:13,fontWeight:500,flex:1}}>{it.text}</span>
                 <span style={S.badge(catColor[it.category])}>{catLabel[it.category]}</span>
-                <button style={S.btnI} onClick={()=>openEditItem(it)}><I name="edit" size={14} color={C.textMuted}/></button>
-                <button style={S.btnI} onClick={()=>rmItem(it.id)}><I name="trash" size={14} color={C.red}/></button>
-              </div>)}
+                <button style={S.btnI} onClick={function(){openEditItem(it);}}><I name="edit" size={14} color={C.textMuted}/></button>
+                <button style={S.btnI} onClick={function(){rmItem(it.id);}}><I name="trash" size={14} color={C.red}/></button>
+              </div>;})}
             </div>
-
-            {/* Add button */}
-            <div style={{display:"flex",alignItems:"center",padding:"0 12px",flexShrink:0}}>
-              <button style={{...S.btnI,background:C.bgHover,borderRadius:6,padding:4}} onClick={()=>openAddItem(mo.key)}>
+            <div style={{display:"flex",alignItems:"center",padding:"0 8px",flexShrink:0}}>
+              <button style={{background:C.bgHover,borderRadius:6,padding:6,border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={function(){openAddItem(mo.key);}}>
                 <I name="plus" size={16} color={C.gold}/>
               </button>
             </div>
@@ -590,57 +574,52 @@ const Roadmap=({roadmapItems,setRoadmapItems,roadmapRanges,setRoadmapRanges})=>{
         </Fragment>;
       })}
     </div>
-
-    {/* Item Modal */}
-    {itemModal&&<Modal title={editItem?"予定を編集":"月の予定を追加"} onClose={()=>setItemModal(false)}>
+    {itemModal&&<Modal title={editItem?"予定を編集":"月の予定を追加"} onClose={function(){setItemModal(false);}}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div><label style={S.lbl}>月</label><select style={{...S.sel,width:"100%"}} value={iF.month} onChange={e=>setIF({...iF,month:e.target.value})}><MonthOpts/></select></div>
-        <div><label style={S.lbl}>内容</label><input style={S.inp} value={iF.text} onChange={e=>setIF({...iF,text:e.target.value})} placeholder="例：院試、卒論、就活開始"/></div>
-        <div><label style={S.lbl}>カテゴリ</label><select style={{...S.sel,width:"100%"}} value={iF.category} onChange={e=>setIF({...iF,category:e.target.value})}><CatOptions/></select></div>
-        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={saveItem}>{editItem?"更新":"追加"}</button>
+        <div><label style={S.lbl}>月</label><select style={Object.assign({},S.sel,{width:"100%"})} value={iF.month} onChange={function(e){setIF(Object.assign({},iF,{month:e.target.value}));}}><MonthOpts/></select></div>
+        <div><label style={S.lbl}>内容</label><input style={S.inp} value={iF.text} onChange={function(e){setIF(Object.assign({},iF,{text:e.target.value}));}} placeholder="例：院試、卒論、就活開始"/></div>
+        <div><label style={S.lbl}>カテゴリ</label><select style={Object.assign({},S.sel,{width:"100%"})} value={iF.category} onChange={function(e){setIF(Object.assign({},iF,{category:e.target.value}));}}><CatOptions/></select></div>
+        <button style={Object.assign({},S.btn(),{width:"100%",justifyContent:"center",marginTop:8})} onClick={saveItem}>{editItem?"更新":"追加"}</button>
       </div>
     </Modal>}
-
-    {/* Range Modal */}
-    {rangeModal&&<Modal title={editRange?"期間を編集":"期間を追加（⇔）"} onClose={()=>setRangeModal(false)}>
+    {rangeModal&&<Modal title={editRange?"期間を編集":"期間を追加（⇔）"} onClose={function(){setRangeModal(false);}}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={S.g2}>
-          <div><label style={S.lbl}>開始月</label><select style={{...S.sel,width:"100%"}} value={rF.startMonth} onChange={e=>setRF({...rF,startMonth:e.target.value})}><MonthOpts/></select></div>
-          <div><label style={S.lbl}>終了月</label><select style={{...S.sel,width:"100%"}} value={rF.endMonth} onChange={e=>setRF({...rF,endMonth:e.target.value})}><MonthOpts/></select></div>
+          <div><label style={S.lbl}>開始月</label><select style={Object.assign({},S.sel,{width:"100%"})} value={rF.startMonth} onChange={function(e){setRF(Object.assign({},rF,{startMonth:e.target.value}));}}><MonthOpts/></select></div>
+          <div><label style={S.lbl}>終了月</label><select style={Object.assign({},S.sel,{width:"100%"})} value={rF.endMonth} onChange={function(e){setRF(Object.assign({},rF,{endMonth:e.target.value}));}}><MonthOpts/></select></div>
         </div>
-        <div><label style={S.lbl}>内容</label><input style={S.inp} value={rF.text} onChange={e=>setRF({...rF,text:e.target.value})} placeholder="例：街ツク活動期間、就活準備期間"/></div>
-        <div><label style={S.lbl}>カテゴリ</label><select style={{...S.sel,width:"100%"}} value={rF.category} onChange={e=>setRF({...rF,category:e.target.value})}><CatOptions/></select></div>
+        <div><label style={S.lbl}>内容</label><input style={S.inp} value={rF.text} onChange={function(e){setRF(Object.assign({},rF,{text:e.target.value}));}} placeholder="例：街ツク活動期間"/></div>
+        <div><label style={S.lbl}>カテゴリ</label><select style={Object.assign({},S.sel,{width:"100%"})} value={rF.category} onChange={function(e){setRF(Object.assign({},rF,{category:e.target.value}));}}><CatOptions/></select></div>
         <div style={{fontSize:12,color:C.textMuted,background:C.bgHover,borderRadius:8,padding:"8px 12px"}}>
           {monthIdx(rF.startMonth)>=0&&monthIdx(rF.endMonth)>=0&&monthIdx(rF.startMonth)<=monthIdx(rF.endMonth)
-            ? "⇔ "+allMonths[monthIdx(rF.startMonth)]?.label+" 〜 "+allMonths[monthIdx(rF.endMonth)]?.label+" ("+((monthIdx(rF.endMonth)-monthIdx(rF.startMonth))+1)+"ヶ月間)"
+            ? "⇔ "+(allMonths[monthIdx(rF.startMonth)]||{}).label+" 〜 "+(allMonths[monthIdx(rF.endMonth)]||{}).label+" ("+(monthIdx(rF.endMonth)-monthIdx(rF.startMonth)+1)+"ヶ月間)"
             : "開始月は終了月より前にしてください"}
         </div>
-        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={saveRange}>{editRange?"更新":"追加"}</button>
+        <button style={Object.assign({},S.btn(),{width:"100%",justifyContent:"center",marginTop:8})} onClick={saveRange}>{editRange?"更新":"追加"}</button>
       </div>
     </Modal>}
   </div>;
 };
 
 /* ===== MAIN APP ===== */
-const App=()=>{
-  const mobile = useIsMobile(900);
-  const saved = React.useMemo(()=>loadData(),[]);
-  const [pg,sPg]=useState("dashboard");
-  const [events,setEvents]=useState(saved?.events || SAMPLE_EVENTS);
-  const [tasks,setTasks]=useState(saved?.tasks || SAMPLE_TASKS);
-  const [notes,setNotes]=useState(saved?.notes || SAMPLE_NOTES);
-  const [habits,setHabits]=useState(saved?.habits || SAMPLE_HABITS);
-  const [hLog,setHLog]=useState(()=>saved?.habitLog || genSampleLog());
-  const [roadmapItems,setRoadmapItems]=useState(saved?.roadmapItems || SAMPLE_ROADMAP_ITEMS);
-  const [roadmapRanges,setRoadmapRanges]=useState(saved?.roadmapRanges || SAMPLE_ROADMAP_RANGES);
+var App=function(){
+  var mobile = useIsMobile(900);
+  var saved = useMemo(function(){return loadData();},[]);
+  var _pg=useState("dashboard"), pg=_pg[0], sPg=_pg[1];
+  var _events=useState(saved&&saved.events?saved.events:SAMPLE_EVENTS), events=_events[0], setEvents=_events[1];
+  var _tasks=useState(saved&&saved.tasks?saved.tasks:SAMPLE_TASKS), tasks=_tasks[0], setTasks=_tasks[1];
+  var _notes=useState(saved&&saved.notes?saved.notes:SAMPLE_NOTES), notes=_notes[0], setNotes=_notes[1];
+  var _habits=useState(saved&&saved.habits?saved.habits:SAMPLE_HABITS), habits=_habits[0], setHabits=_habits[1];
+  var _hLog=useState(function(){return saved&&saved.habitLog?saved.habitLog:genSampleLog();}), hLog=_hLog[0], setHLog=_hLog[1];
+  var _rmI=useState(saved&&saved.roadmapItems?saved.roadmapItems:[]), roadmapItems=_rmI[0], setRoadmapItems=_rmI[1];
+  var _rmR=useState(saved&&saved.roadmapRanges?saved.roadmapRanges:[]), roadmapRanges=_rmR[0], setRoadmapRanges=_rmR[1];
 
-  /* 自動保存 */
-  useEffect(()=>{saveData({events,tasks,notes,habits,habitLog:hLog,roadmapItems,roadmapRanges});},[events,tasks,notes,habits,hLog,roadmapItems,roadmapRanges]);
+  useEffect(function(){saveData({events:events,tasks:tasks,notes:notes,habits:habits,habitLog:hLog,roadmapItems:roadmapItems,roadmapRanges:roadmapRanges});},[events,tasks,notes,habits,hLog,roadmapItems,roadmapRanges]);
 
-  const impAll=useCallback(d=>{if(d.events)setEvents(d.events);if(d.tasks)setTasks(d.tasks);if(d.notes)setNotes(d.notes);if(d.habits)setHabits(d.habits);if(d.habitLog)setHLog(d.habitLog);if(d.roadmapItems)setRoadmapItems(d.roadmapItems);if(d.roadmapRanges)setRoadmapRanges(d.roadmapRanges);},[]);
-  const expD=()=>{const d=JSON.stringify({events,tasks,notes,habits,habitLog:hLog,roadmapItems,roadmapRanges},null,2);const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="planner-backup-"+todayStr+".json";a.click();URL.revokeObjectURL(u);};
-  const impF=e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>{try{impAll(JSON.parse(ev.target.result));}catch(err){alert("読み込み失敗");}};r.readAsText(file);};
-  const nav=[
+  var impAll=useCallback(function(d){if(d.events)setEvents(d.events);if(d.tasks)setTasks(d.tasks);if(d.notes)setNotes(d.notes);if(d.habits)setHabits(d.habits);if(d.habitLog)setHLog(d.habitLog);if(d.roadmapItems)setRoadmapItems(d.roadmapItems);if(d.roadmapRanges)setRoadmapRanges(d.roadmapRanges);},[]);
+  var expD=function(){var d=JSON.stringify({events:events,tasks:tasks,notes:notes,habits:habits,habitLog:hLog,roadmapItems:roadmapItems,roadmapRanges:roadmapRanges},null,2);var b=new Blob([d],{type:"application/json"});var u=URL.createObjectURL(b);var a=document.createElement("a");a.href=u;a.download="planner-backup-"+todayStr+".json";a.click();URL.revokeObjectURL(u);};
+  var impF=function(e){var file=e.target.files[0];if(!file)return;var r=new FileReader();r.onload=function(ev){try{impAll(JSON.parse(ev.target.result));}catch(err){alert("読み込み失敗");}};r.readAsText(file);};
+  var nav=[
     {id:"dashboard",label:"ホーム",icon:"home"},
     {id:"schedule",label:"予定",icon:"calendar"},
     {id:"tasks",label:"タスク",icon:"checkSquare"},
@@ -648,8 +627,7 @@ const App=()=>{
     {id:"habits",label:"習慣",icon:"target"},
     {id:"roadmap",label:"計画",icon:"roadmap"},
   ];
-
-  const content = <Fragment>
+  var content = <Fragment>
     {pg==="dashboard"&&<Dashboard events={events} tasks={tasks} habits={habits} habitLog={hLog} notes={notes} mobile={mobile}/>}
     {pg==="schedule"&&<Schedule events={events} setEvents={setEvents}/>}
     {pg==="tasks"&&<Tasks tasks={tasks} setTasks={setTasks}/>}
@@ -657,28 +635,30 @@ const App=()=>{
     {pg==="habits"&&<Habits habits={habits} setHabits={setHabits} habitLog={hLog} setHabitLog={setHLog}/>}
     {pg==="roadmap"&&<Roadmap roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} roadmapRanges={roadmapRanges} setRoadmapRanges={setRoadmapRanges}/>}
   </Fragment>;
-
-  /* --- Mobile layout: top header + content + bottom tab bar --- */
   if (mobile) {
     return <div style={S.appMobile}>
-      <div style={{background:C.bgCard,borderBottom:"1px solid "+C.border,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
-        <div><span style={{fontSize:16,fontWeight:700,color:C.gold,letterSpacing:1}}>EXECUTIVE</span></div>
-        <div style={S.fg(8)}>
-          <button style={{...S.btn(),padding:"6px 10px",fontSize:12}} onClick={expD}><I name="download" size={12} color={C.bg}/></button>
-          <label style={{...S.btnO,padding:"6px 10px",fontSize:12}}><I name="upload" size={12}/><input type="file" accept=".json" onChange={impF} style={{display:"none"}}/></label>
+      {/* Header bar */}
+      <div style={{background:C.bgCard,borderBottom:"1px solid "+C.border,padding:"8px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+        <div><span style={{fontSize:15,fontWeight:700,color:C.gold,letterSpacing:1}}>EXECUTIVE</span></div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button style={Object.assign({},S.btn(),{padding:"6px 10px",fontSize:12})} onClick={expD}><I name="download" size={12} color={C.bg}/></button>
+          <label style={Object.assign({},S.btnO,{padding:"6px 10px",fontSize:12})}><I name="upload" size={12}/><input type="file" accept=".json" onChange={impF} style={{display:"none"}}/></label>
         </div>
       </div>
-      <div style={S.mainMobile}>{content}</div>
-      <div style={S.bottomBar}>
-        {nav.map(n=><button key={n.id} style={S.bottomItem(pg===n.id)} onClick={()=>sPg(n.id)}>
-          <I name={n.icon} size={18} color={pg===n.id?C.gold:C.textMuted}/>
-          <span>{n.label}</span>
-        </button>)}
+      {/* Top tab bar */}
+      <div style={{background:C.bgCard,borderBottom:"1px solid "+C.border,display:"flex",justifyContent:"space-around",flexShrink:0,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        {nav.map(function(n){
+          var active=pg===n.id;
+          return <button key={n.id} style={{display:"flex",alignItems:"center",gap:5,padding:"10px 8px",cursor:"pointer",color:active?C.gold:C.textMuted,fontSize:12,fontWeight:active?700:400,background:"transparent",border:"none",borderBottom:active?"2px solid "+C.gold:"2px solid transparent",whiteSpace:"nowrap",flex:1,justifyContent:"center",transition:"all 0.2s"}} onClick={function(){sPg(n.id);}}>
+            <I name={n.icon} size={16} color={active?C.gold:C.textMuted}/>
+            <span>{n.label}</span>
+          </button>;
+        })}
       </div>
+      {/* Content */}
+      <div className="scroll-area" style={S.mainMobile}>{content}</div>
     </div>;
   }
-
-  /* --- Desktop layout: sidebar + content --- */
   return <div style={S.app}>
     <div style={S.sidebar}>
       <div style={{padding:"24px 20px 16px",borderBottom:"1px solid "+C.border}}>
@@ -686,7 +666,7 @@ const App=()=>{
         <div style={{fontSize:11,color:C.textMuted,marginTop:4,letterSpacing:2,textTransform:"uppercase"}}>Personal Planner</div>
       </div>
       <div style={{padding:"12px 0",flex:1}}>
-        {nav.map(n=><div key={n.id} style={S.navItem(pg===n.id)} onClick={()=>sPg(n.id)}><I name={n.icon} size={18}/><span>{n.label}</span></div>)}
+        {nav.map(function(n){return <button key={n.id} style={S.navItem(pg===n.id)} onClick={function(){sPg(n.id);}}><I name={n.icon} size={18}/><span>{n.label}</span></button>;})}
       </div>
       <div style={{padding:"16px 20px",borderTop:"1px solid "+C.border}}>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -695,7 +675,7 @@ const App=()=>{
         </div>
       </div>
     </div>
-    <div style={S.main}>{content}</div>
+    <div className="scroll-area" style={S.main}>{content}</div>
   </div>;
 };
 
