@@ -227,64 +227,194 @@ var Dashboard=function(props){
   </div>;
 };
 
-/* ===== SCHEDULE ===== */
+/* ===== SCHEDULE (Google Calendar style) ===== */
 var Schedule=function(props){
   var events=props.events, setEvents=props.setEvents;
+  var tasks=props.tasks, setTasks=props.setTasks;
+  /* Calendar state */
   var _vd=useState(new Date(today)), vd=_vd[0], setVd=_vd[1];
   var _sel=useState(todayStr), sel=_sel[0], setSel=_sel[1];
+  /* Event modal */
   var _sm=useState(false), sm=_sm[0], setSm=_sm[1];
   var _ee=useState(null), ee=_ee[0], setEe=_ee[1];
   var _f=useState({title:"",startTime:"",endTime:"",category:"university",memo:""}), f=_f[0], sF=_f[1];
+  /* Quick add inline */
+  var _qa=useState(false), qa=_qa[0], setQa=_qa[1];
+  var _qf=useState({title:"",startTime:"08:00",endTime:"09:00",category:"university"}), qf=_qf[0], setQf=_qf[1];
+  /* Todo inline */
+  var _todoText=useState(""), todoText=_todoText[0], setTodoText=_todoText[1];
+  var _todoCat=useState("university"), todoCat=_todoCat[0], setTodoCat=_todoCat[1];
+
   var y=vd.getFullYear(), m=vd.getMonth(), dim=getDIM(y,m), fd=getFDM(y,m);
   var prev=function(){setVd(new Date(y,m-1,1));};
   var next=function(){setVd(new Date(y,m+1,1));};
-  var oA=function(){setEe(null);sF({title:"",startTime:"",endTime:"",category:"university",memo:""});setSm(true);};
-  var oE=function(ev){setEe(ev);sF({title:ev.title,startTime:ev.startTime,endTime:ev.endTime,category:ev.category,memo:ev.memo});setSm(true);};
-  var save=function(){if(!f.title)return;if(ee){setEvents(function(p){return p.map(function(e){return e.id===ee.id?Object.assign({},e,f):e;});});}else{setEvents(function(p){return p.concat([Object.assign({id:gid(),date:sel},f)]);});}setSm(false);};
+  /* Parse selected date for display */
+  var selParts=sel.split("-");
+  var selDate=new Date(parseInt(selParts[0]),parseInt(selParts[1])-1,parseInt(selParts[2]));
+  var selLabel=parseInt(selParts[1])+"月"+parseInt(selParts[2])+"日（"+DAYS_JP[selDate.getDay()]+"）";
+
+  /* Modal open/save */
+  var oE=function(ev){setEe(ev);sF({title:ev.title,startTime:ev.startTime,endTime:ev.endTime,category:ev.category,memo:ev.memo||""});setSm(true);};
+  var saveModal=function(){if(!f.title)return;if(ee){setEvents(function(p){return p.map(function(e){return e.id===ee.id?Object.assign({},e,f):e;});});}setSm(false);};
   var rm=function(id){setEvents(function(p){return p.filter(function(e){return e.id!==id;});});};
+
+  /* Quick add */
+  var openQuickAdd=function(hour){
+    var st=String(hour).padStart(2,"0")+":00";
+    var et=String(hour+1).padStart(2,"0")+":00";
+    setQf({title:"",startTime:st,endTime:et,category:"university"});
+    setQa(true);
+  };
+  var saveQuick=function(){
+    if(!qf.title)return;
+    setEvents(function(p){return p.concat([{id:gid(),date:sel,title:qf.title,startTime:qf.startTime,endTime:qf.endTime,category:qf.category,memo:""}]);});
+    setQa(false);
+  };
+
+  /* Add todo for this day */
+  var addTodo=function(){
+    if(!todoText.trim())return;
+    setTasks(function(p){return p.concat([{id:gid(),title:todoText.trim(),deadline:sel,category:todoCat,done:false}]);});
+    setTodoText("");
+  };
+  var togTodo=function(id){setTasks(function(p){return p.map(function(t){return t.id===id?Object.assign({},t,{done:!t.done}):t;});});};
+  var rmTodo=function(id){setTasks(function(p){return p.filter(function(t){return t.id!==id;});});};
+
+  /* Day events */
   var dEv=events.filter(function(e){return e.date===sel;}).sort(function(a,b){return (a.startTime||"").localeCompare(b.startTime||"");});
+  /* Day todos */
+  var dTodos=tasks.filter(function(t){return t.deadline===sel;});
+
+  /* Calendar cells */
   var cells=[];for(var i=0;i<fd;i++)cells.push(null);for(var d=1;d<=dim;d++)cells.push(d);
+
+  /* Timeline hours 6:00 - 23:00 */
+  var HOUR_H=52;
+  var START_HOUR=6, END_HOUR=23;
+  var hours=[];for(var h=START_HOUR;h<=END_HOUR;h++)hours.push(h);
+
+  /* Convert time string to pixel position */
+  var timeToY=function(timeStr){
+    var parts=timeStr.split(":");
+    var h=parseInt(parts[0]), mi=parseInt(parts[1]||"0");
+    return (h-START_HOUR+mi/60)*HOUR_H;
+  };
+
   return <div>
-    <div style={S.fb}><h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>スケジュール</h2><button style={S.btn()} onClick={oA}><I name="plus" size={14} color={C.bg}/> 追加</button></div>
+    {/* Mini calendar */}
     <div style={S.card}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <button style={S.btnI} onClick={prev}><I name="chevronLeft" size={20} color={C.gold}/></button>
-        <span style={{fontSize:18,fontWeight:700,color:C.gold}}>{y}年 {MONTHS_JP[m]}</span>
+        <span style={{fontSize:16,fontWeight:700,color:C.gold}}>{y}年 {MONTHS_JP[m]}</span>
         <button style={S.btnI} onClick={next}><I name="chevronRight" size={20} color={C.gold}/></button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
-        {DAYS_JP.map(function(d){return <div key={d} style={{textAlign:"center",fontSize:12,color:C.textMuted,padding:"8px 0",fontWeight:600}}>{d}</div>;})}
+        {DAYS_JP.map(function(d){return <div key={d} style={{textAlign:"center",fontSize:11,color:C.textMuted,padding:"4px 0",fontWeight:600}}>{d}</div>;})}
         {cells.map(function(day,i){
           if(day===null)return <div key={"e"+i}/>;
           var ds=y+"-"+String(m+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
           var iT=ds===todayStr, iS=ds===sel, hE=events.some(function(e){return e.date===ds;});
-          return <button key={i} onClick={function(){setSel(ds);}} style={{textAlign:"center",padding:"10px 0",cursor:"pointer",borderRadius:8,position:"relative",background:iS?C.gold:iT?C.bgHover:"transparent",color:iS?C.bg:iT?C.gold:C.text,fontWeight:iT||iS?700:400,fontSize:14,transition:"all 0.15s",border:"none",width:"100%"}}>
-            {day}{hE&&<div style={{position:"absolute",bottom:4,left:"50%",transform:"translateX(-50%)",width:5,height:5,borderRadius:"50%",background:iS?C.bg:C.gold}}/>}
+          return <button key={i} onClick={function(){setSel(ds);}} style={{textAlign:"center",padding:"8px 0",cursor:"pointer",borderRadius:8,position:"relative",background:iS?C.gold:iT?C.bgHover:"transparent",color:iS?C.bg:iT?C.gold:C.text,fontWeight:iT||iS?700:400,fontSize:13,transition:"all 0.15s",border:"none",width:"100%"}}>
+            {day}{hE&&<div style={{position:"absolute",bottom:2,left:"50%",transform:"translateX(-50%)",width:4,height:4,borderRadius:"50%",background:iS?C.bg:C.gold}}/>}
           </button>;
         })}
       </div>
     </div>
-    <div style={{marginTop:16}}>
-      <h3 style={{fontSize:16,fontWeight:600,color:C.textDim,marginBottom:12}}>{sel} の予定</h3>
-      {dEv.length===0?<div style={{background:C.bgCard,borderRadius:8,padding:16,border:"1px solid "+C.border,color:C.textMuted,textAlign:"center"}}>この日の予定はありません</div>:dEv.map(function(ev){return <div key={ev.id} style={{background:C.bgCard,borderRadius:8,padding:16,marginBottom:12,border:"1px solid "+C.border,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{display:"flex",gap:12,alignItems:"center"}}>
-          <div style={{width:4,height:44,borderRadius:2,background:catColor[ev.category]||C.gold}}/>
-          <div>
-            <div style={{fontWeight:600,fontSize:14}}>{ev.title}</div>
-            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
-              <span style={{fontSize:12,color:C.textMuted}}><I name="clock" size={12} color={C.textMuted}/> {ev.startTime} - {ev.endTime}</span>
-              <span style={S.badge(catColor[ev.category])}>{catLabel[ev.category]}</span>
-            </div>
-            {ev.memo&&<div style={{fontSize:12,color:C.textDim,marginTop:4}}>{ev.memo}</div>}
-          </div>
-        </div>
-        <div style={{display:"flex",gap:4,alignItems:"center"}}>
-          <button style={S.btnI} onClick={function(){oE(ev);}}><I name="edit" size={16} color={C.textMuted}/></button>
-          <button style={S.btnI} onClick={function(){rm(ev.id);}}><I name="trash" size={16} color={C.red}/></button>
-        </div>
-      </div>;})}
+
+    {/* Day header */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:16,marginBottom:12}}>
+      <h3 style={{fontSize:18,fontWeight:700,color:C.text}}>{selLabel}</h3>
     </div>
-    {sm&&<Modal title={ee?"予定を編集":"予定を追加"} onClose={function(){setSm(false);}}>
+
+    {/* ===== TIMELINE (Google Calendar style) ===== */}
+    <div style={Object.assign({},S.card,{padding:0,overflow:"hidden"})}>
+      <div style={{position:"relative",height:hours.length*HOUR_H}}>
+        {/* Hour grid lines */}
+        {hours.map(function(h){
+          var top=(h-START_HOUR)*HOUR_H;
+          var label=h<12?(h===0?"0:00":"午前"+h+"時"):h===12?"午後12時":"午後"+(h-12)+"時";
+          return <div key={h} style={{position:"absolute",top:top,left:0,right:0,height:HOUR_H,borderBottom:"1px solid "+C.border,display:"flex"}}>
+            {/* Time label */}
+            <div style={{width:56,minWidth:56,fontSize:10,color:C.textMuted,padding:"4px 6px 0",textAlign:"right",borderRight:"1px solid "+C.border}}>{label}</div>
+            {/* Clickable area to add event */}
+            <button onClick={function(){openQuickAdd(h);}} style={{flex:1,background:"transparent",border:"none",cursor:"pointer",display:"block",width:"100%",height:"100%"}}></button>
+          </div>;
+        })}
+
+        {/* Event blocks overlaid */}
+        {dEv.map(function(ev){
+          if(!ev.startTime||!ev.endTime)return null;
+          var topPx=timeToY(ev.startTime);
+          var botPx=timeToY(ev.endTime);
+          var height=Math.max(botPx-topPx, 24);
+          var color=catColor[ev.category]||C.gold;
+          /* Clamp to visible area */
+          if(topPx<0)topPx=0;
+          return <button key={ev.id} onClick={function(){oE(ev);}} style={{position:"absolute",top:topPx,left:60,right:4,height:height,background:color+"33",border:"1px solid "+color,borderLeft:"3px solid "+color,borderRadius:6,padding:"3px 8px",cursor:"pointer",overflow:"hidden",zIndex:2,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+            <div style={{fontSize:12,fontWeight:700,color:color,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textAlign:"left"}}>{ev.title}</div>
+            {height>30&&<div style={{fontSize:10,color:color,opacity:0.8,textAlign:"left"}}>{ev.startTime}〜{ev.endTime}</div>}
+          </button>;
+        })}
+
+        {/* Current time indicator */}
+        {sel===todayStr&&function(){
+          var now=new Date();
+          var nowMin=now.getHours()*60+now.getMinutes();
+          var startMin=START_HOUR*60;
+          if(nowMin>=startMin){
+            var topPx2=((nowMin-startMin)/60)*HOUR_H;
+            return <div style={{position:"absolute",top:topPx2,left:52,right:0,height:2,background:C.red,zIndex:3}}>
+              <div style={{position:"absolute",left:-4,top:-3,width:8,height:8,borderRadius:"50%",background:C.red}}/>
+            </div>;
+          }
+          return null;
+        }()}
+      </div>
+    </div>
+
+    {/* ===== Quick add bar ===== */}
+    {qa&&<div style={Object.assign({},S.card,{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0,borderTop:"2px solid "+C.gold})}>
+      <div style={{fontSize:13,fontWeight:700,color:C.gold,marginBottom:10}}>予定をサクッと追加</div>
+      <div style={{display:"flex",gap:8,marginBottom:8}}>
+        <input style={Object.assign({},S.inp,{flex:1})} value={qf.title} onChange={function(e){setQf(Object.assign({},qf,{title:e.target.value}));}} placeholder="予定名（例：街ツク）" autoFocus/>
+        <select style={Object.assign({},S.sel,{width:80})} value={qf.category} onChange={function(e){setQf(Object.assign({},qf,{category:e.target.value}));}}><CatOptions/></select>
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <input style={Object.assign({},S.inp,{width:100,flex:"none"})} type="time" value={qf.startTime} onChange={function(e){setQf(Object.assign({},qf,{startTime:e.target.value}));}}/>
+        <span style={{color:C.textMuted,fontSize:14}}>〜</span>
+        <input style={Object.assign({},S.inp,{width:100,flex:"none"})} type="time" value={qf.endTime} onChange={function(e){setQf(Object.assign({},qf,{endTime:e.target.value}));}}/>
+        <button style={S.btn()} onClick={saveQuick}>追加</button>
+        <button style={S.btnI} onClick={function(){setQa(false);}}><I name="x" size={18} color={C.textMuted}/></button>
+      </div>
+    </div>}
+
+    {/* ===== Day TODO list ===== */}
+    <div style={Object.assign({},S.card,{marginTop:16})}>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12}}>
+        <I name="checkSquare" size={18} color={C.gold}/>
+        <span style={{fontWeight:700,color:C.gold,fontSize:15}}>この日のTODO</span>
+        <span style={{fontSize:12,color:C.textMuted}}>({dTodos.filter(function(t){return !t.done;}).length}件)</span>
+      </div>
+      {/* Add todo inline */}
+      <div style={{display:"flex",gap:8,marginBottom:12}}>
+        <input style={Object.assign({},S.inp,{flex:1})} value={todoText} onChange={function(e){setTodoText(e.target.value);}} placeholder="TODOを追加..." onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();addTodo();}}}/>
+        <select style={Object.assign({},S.sel,{width:80})} value={todoCat} onChange={function(e){setTodoCat(e.target.value);}}><CatOptions/></select>
+        <button style={S.btn()} onClick={addTodo}><I name="plus" size={14} color={C.bg}/></button>
+      </div>
+      {/* Todo items */}
+      {dTodos.length===0?<div style={{color:C.textMuted,fontSize:13,textAlign:"center",padding:12}}>TODOはありません</div>:dTodos.map(function(t){
+        return <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid "+C.border,opacity:t.done?0.5:1}}>
+          <input type="checkbox" checked={t.done} onChange={function(){togTodo(t.id);}}/>
+          <span style={{width:3,height:18,borderRadius:2,background:catColor[t.category]||C.gold,flexShrink:0}}/>
+          <span style={{flex:1,fontSize:14,fontWeight:500,textDecoration:t.done?"line-through":"none"}}>{t.title}</span>
+          <span style={S.badge(catColor[t.category])}>{catLabel[t.category]}</span>
+          <button style={S.btnI} onClick={function(){rmTodo(t.id);}}><I name="trash" size={14} color={C.red}/></button>
+        </div>;
+      })}
+    </div>
+
+    {/* Edit modal */}
+    {sm&&<Modal title="予定を編集" onClose={function(){setSm(false);}}>
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div><label style={S.lbl}>タイトル</label><input style={S.inp} value={f.title} onChange={function(e){sF(Object.assign({},f,{title:e.target.value}));}} placeholder="予定のタイトル"/></div>
         <div style={S.g2}>
@@ -293,7 +423,12 @@ var Schedule=function(props){
         </div>
         <div><label style={S.lbl}>カテゴリ</label><select style={Object.assign({},S.sel,{width:"100%"})} value={f.category} onChange={function(e){sF(Object.assign({},f,{category:e.target.value}));}}><CatOptions/></select></div>
         <div><label style={S.lbl}>メモ</label><input style={S.inp} value={f.memo} onChange={function(e){sF(Object.assign({},f,{memo:e.target.value}));}} placeholder="メモ（任意）"/></div>
-        <button style={Object.assign({},S.btn(),{width:"100%",justifyContent:"center",marginTop:8})} onClick={save}>{ee?"更新":"追加"}</button>
+        <div style={{display:"flex",gap:8}}>
+          <button style={Object.assign({},S.btn(),{flex:1,justifyContent:"center"})} onClick={saveModal}>更新</button>
+          <button style={Object.assign({},S.btn(C.red),{justifyContent:"center",padding:"8px 16px"})} onClick={function(){rm(ee.id);setSm(false);}}>
+            <I name="trash" size={14} color="#fff"/> 削除
+          </button>
+        </div>
       </div>
     </Modal>}
   </div>;
@@ -629,7 +764,7 @@ var App=function(){
   ];
   var content = <Fragment>
     {pg==="dashboard"&&<Dashboard events={events} tasks={tasks} habits={habits} habitLog={hLog} notes={notes} mobile={mobile}/>}
-    {pg==="schedule"&&<Schedule events={events} setEvents={setEvents}/>}
+    {pg==="schedule"&&<Schedule events={events} setEvents={setEvents} tasks={tasks} setTasks={setTasks}/>}
     {pg==="tasks"&&<Tasks tasks={tasks} setTasks={setTasks}/>}
     {pg==="notes"&&<Notes notes={notes} setNotes={setNotes}/>}
     {pg==="habits"&&<Habits habits={habits} setHabits={setHabits} habitLog={hLog} setHabitLog={setHLog}/>}
