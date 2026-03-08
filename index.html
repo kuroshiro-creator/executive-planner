@@ -12,9 +12,7 @@
   ::-webkit-scrollbar-track { background: #1e293b; }
   ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
   input[type="checkbox"] { accent-color: #d4a853; width: 22px; height: 22px; cursor: pointer; }
-  /* PWA-like full screen */
   html, body, #root { height: 100%; width: 100%; }
-  /* Safe area for notched devices */
   body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 </style>
 </head>
@@ -24,7 +22,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script type="text/babel">
-const { useState, useCallback, useEffect, Fragment } = React;
+const { useState, useCallback, useEffect, Fragment, useMemo } = React;
 
 /* ===== Responsive hook ===== */
 const useIsMobile = (breakpoint = 900) => {
@@ -49,6 +47,7 @@ const icons = {
   checkSquare: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
   bookOpen: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
   target: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>,
+  roadmap: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/><polyline points="15 19 18 22 21 19"/></svg>,
   plus: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
   x: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
   edit: (sz,c) => <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
@@ -111,6 +110,10 @@ const genSampleLog = () => {
   return log;
 };
 
+/* Sample roadmap data */
+const SAMPLE_ROADMAP_ITEMS = [];
+const SAMPLE_ROADMAP_RANGES = [];
+
 /* ===== THEME ===== */
 const C = {
   bg:"#0f172a",bgCard:"#1e293b",bgHover:"#334155",bgInput:"#0f172a",
@@ -131,7 +134,7 @@ const S={
   appMobile:{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"},
   sidebar:{width:220,background:C.bgCard,borderRight:"1px solid "+C.border,display:"flex",flexDirection:"column",flexShrink:0},
   bottomBar:{background:C.bgCard,borderTop:"1px solid "+C.border,display:"flex",justifyContent:"space-around",padding:"6px 0 calc(6px + env(safe-area-inset-bottom))",flexShrink:0},
-  bottomItem:a=>({display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 8px",cursor:"pointer",color:a?C.gold:C.textMuted,fontSize:10,fontWeight:a?600:400,background:"transparent",border:"none",flex:1}),
+  bottomItem:a=>({display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"4px 4px",cursor:"pointer",color:a?C.gold:C.textMuted,fontSize:9,fontWeight:a?600:400,background:"transparent",border:"none",flex:1}),
   navItem:a=>({display:"flex",alignItems:"center",gap:12,padding:"12px 20px",cursor:"pointer",background:a?C.bgHover:"transparent",color:a?C.gold:C.textDim,borderLeft:a?"3px solid "+C.gold:"3px solid transparent",transition:"all 0.2s",fontSize:14,fontWeight:a?600:400}),
   main:{flex:1,overflow:"auto",padding:32},
   mainMobile:{flex:1,overflow:"auto",padding:16},
@@ -408,6 +411,216 @@ const Habits=({habits,setHabits,habitLog,setHabitLog})=>{
   </div>;
 };
 
+/* ===== ROADMAP (長期計画) ===== */
+const Roadmap=({roadmapItems,setRoadmapItems,roadmapRanges,setRoadmapRanges})=>{
+  /* Helper: month key "2026-05" */
+  const mkKey=(y,m)=>y+"-"+String(m).padStart(2,"0");
+  const parseKey=(k)=>{const p=k.split("-");return{y:parseInt(p[0]),m:parseInt(p[1])};};
+
+  /* Timeline: 2026-04 to 2029-03 (36 months) */
+  const START_Y=2026, START_M=4, END_Y=2029, END_M=3;
+  const allMonths=useMemo(()=>{
+    const arr=[];
+    let y=START_Y, m=START_M;
+    while(y<END_Y||(y===END_Y&&m<=END_M)){
+      arr.push({key:mkKey(y,m),y,m,label:y+"年"+m+"月"});
+      m++;if(m>12){m=1;y++;}
+    }
+    return arr;
+  },[]);
+
+  const monthIdx=(key)=>allMonths.findIndex(mo=>mo.key===key);
+
+  /* Current month highlight */
+  const curMonthKey = mkKey(today.getFullYear(), today.getMonth()+1);
+
+  /* Modals */
+  const [itemModal,setItemModal]=useState(false);
+  const [rangeModal,setRangeModal]=useState(false);
+  const [editItem,setEditItem]=useState(null);
+  const [editRange,setEditRange]=useState(null);
+
+  /* Item form */
+  const [iF,setIF]=useState({month:curMonthKey,text:"",category:"university"});
+  /* Range form */
+  const [rF,setRF]=useState({startMonth:curMonthKey,endMonth:curMonthKey,text:"",category:"university"});
+
+  /* Month select options */
+  const MonthOpts=()=>allMonths.map(mo=><option key={mo.key} value={mo.key}>{mo.label}</option>);
+
+  const openAddItem=(monthKey)=>{setEditItem(null);setIF({month:monthKey||curMonthKey,text:"",category:"university"});setItemModal(true);};
+  const openEditItem=(item)=>{setEditItem(item);setIF({month:item.month,text:item.text,category:item.category});setItemModal(true);};
+  const saveItem=()=>{
+    if(!iF.text)return;
+    if(editItem){setRoadmapItems(p=>p.map(it=>it.id===editItem.id?{...it,...iF}:it));}
+    else{setRoadmapItems(p=>[...p,{id:gid(),...iF}]);}
+    setItemModal(false);
+  };
+  const rmItem=id=>setRoadmapItems(p=>p.filter(it=>it.id!==id));
+
+  const openAddRange=()=>{setEditRange(null);setRF({startMonth:curMonthKey,endMonth:mkKey(START_Y,START_M+3>12?1:START_M+3),text:"",category:"university"});setRangeModal(true);};
+  const openEditRange=(r)=>{setEditRange(r);setRF({startMonth:r.startMonth,endMonth:r.endMonth,text:r.text,category:r.category});setRangeModal(true);};
+  const saveRange=()=>{
+    if(!rF.text)return;
+    const si=monthIdx(rF.startMonth),ei=monthIdx(rF.endMonth);
+    if(si<0||ei<0||si>ei)return;
+    if(editRange){setRoadmapRanges(p=>p.map(r=>r.id===editRange.id?{...r,...rF}:r));}
+    else{setRoadmapRanges(p=>[...p,{id:gid(),...rF}]);}
+    setRangeModal(false);
+  };
+  const rmRange=id=>setRoadmapRanges(p=>p.filter(r=>r.id!==id));
+
+  /* Group items by month */
+  const itemsByMonth = useMemo(()=>{
+    const map={};
+    roadmapItems.forEach(it=>{if(!map[it.month])map[it.month]=[];map[it.month].push(it);});
+    return map;
+  },[roadmapItems]);
+
+  /* Calculate range bars with lane assignment to avoid overlap */
+  const sortedRanges = useMemo(()=>{
+    return [...roadmapRanges].sort((a,b)=>{
+      const ai=monthIdx(a.startMonth),bi=monthIdx(b.startMonth);
+      if(ai!==bi)return ai-bi;
+      return monthIdx(b.endMonth)-monthIdx(a.endMonth);
+    });
+  },[roadmapRanges,allMonths]);
+
+  /* Assign lanes */
+  const rangeLanes = useMemo(()=>{
+    const lanes=[];
+    const assignments=new Map();
+    sortedRanges.forEach(r=>{
+      const si=monthIdx(r.startMonth),ei=monthIdx(r.endMonth);
+      let lane=0;
+      while(true){
+        let conflict=false;
+        for(const [rid,{si:osi,ei:oei,lane:ol}] of assignments){
+          if(ol===lane&&!(ei<osi||si>oei)){conflict=true;break;}
+        }
+        if(!conflict)break;
+        lane++;
+      }
+      assignments.set(r.id,{si,ei,lane});
+      if(lane>=lanes.length)lanes.push([]);
+      lanes[lane].push(r);
+    });
+    return {assignments,laneCount:lanes.length};
+  },[sortedRanges,allMonths]);
+
+  const ROW_H=64;
+  const RANGE_BAR_H=28;
+  const RANGE_LANE_GAP=4;
+  const rangeAreaH = rangeLanes.laneCount>0 ? rangeLanes.laneCount*(RANGE_BAR_H+RANGE_LANE_GAP) : 0;
+
+  return <div>
+    <div style={S.fb}>
+      <h2 style={{fontSize:24,fontWeight:700,marginBottom:24}}>長期計画</h2>
+      <div style={S.fg(8)}>
+        <button style={S.btn()} onClick={()=>openAddItem(null)}><I name="plus" size={14} color={C.bg}/> 予定追加</button>
+        <button style={S.btnO} onClick={openAddRange}>⇔ 期間追加</button>
+      </div>
+    </div>
+    <div style={{fontSize:12,color:C.textMuted,marginBottom:16}}>2026年4月 〜 2029年3月 のロードマップ</div>
+
+    {/* Range bars area */}
+    {rangeAreaH>0&&<div style={{...S.card,padding:16,marginBottom:0,borderBottomLeftRadius:0,borderBottomRightRadius:0,borderBottom:"none",position:"relative",overflow:"hidden"}}>
+      <div style={{fontSize:12,color:C.textMuted,marginBottom:8,fontWeight:600}}>期間バー（⇔）</div>
+      <div style={{position:"relative",height:rangeAreaH}}>
+        {sortedRanges.map(r=>{
+          const info=rangeLanes.assignments.get(r.id);
+          if(!info)return null;
+          const {si,ei,lane}=info;
+          const totalM=allMonths.length;
+          const leftPct=(si/totalM*100)+"%";
+          const widthPct=((ei-si+1)/totalM*100)+"%";
+          const top=lane*(RANGE_BAR_H+RANGE_LANE_GAP);
+          const color=catColor[r.category]||C.gold;
+          return <div key={r.id} style={{position:"absolute",left:leftPct,width:widthPct,top,height:RANGE_BAR_H,background:color+"33",border:"2px solid "+color,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer",overflow:"hidden",whiteSpace:"nowrap"}} onClick={()=>openEditRange(r)}>
+            <span style={{fontSize:11,fontWeight:700,color,padding:"0 8px",overflow:"hidden",textOverflow:"ellipsis"}}>
+              ⇔ {r.text}
+            </span>
+            <button style={{...S.btnI,position:"absolute",right:2,top:2,padding:2}} onClick={e=>{e.stopPropagation();rmRange(r.id);}}><I name="x" size={12} color={color}/></button>
+          </div>;
+        })}
+      </div>
+    </div>}
+
+    {/* Monthly timeline */}
+    <div style={{...S.card,padding:0,borderTopLeftRadius:rangeAreaH>0?0:12,borderTopRightRadius:rangeAreaH>0?0:12,overflow:"hidden"}}>
+      {allMonths.map((mo,idx)=>{
+        const isCur=mo.key===curMonthKey;
+        const isPast=mo.key<curMonthKey;
+        const items=itemsByMonth[mo.key]||[];
+        const isYearStart=mo.m===4; /* 年度始め */
+        return <Fragment key={mo.key}>
+          {isYearStart&&idx>0&&<div style={{background:C.gold+"22",padding:"8px 20px",borderTop:"1px solid "+C.gold+"44",borderBottom:"1px solid "+C.gold+"44"}}>
+            <span style={{fontSize:13,fontWeight:700,color:C.gold}}>{mo.y}年度</span>
+          </div>}
+          <div style={{display:"flex",borderBottom:"1px solid "+C.border,minHeight:ROW_H,opacity:isPast?0.5:1,background:isCur?C.bgHover+"88":"transparent",transition:"background 0.2s"}}
+               onMouseEnter={e=>{if(!isCur)e.currentTarget.style.background=C.bgHover+"44";}}
+               onMouseLeave={e=>{if(!isCur)e.currentTarget.style.background="transparent";}}>
+            {/* Month label */}
+            <div style={{width:80,minWidth:80,padding:"12px 0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRight:"1px solid "+C.border,flexShrink:0}}>
+              <div style={{fontSize:22,fontWeight:700,color:isCur?C.gold:C.text}}>{mo.m}</div>
+              <div style={{fontSize:10,color:isCur?C.gold:C.textMuted}}>{mo.y}</div>
+              {isCur&&<div style={{width:6,height:6,borderRadius:"50%",background:C.gold,marginTop:4}}/>}
+            </div>
+
+            {/* Items area */}
+            <div style={{flex:1,padding:"8px 16px",display:"flex",flexDirection:"column",gap:6,justifyContent:"center",minHeight:ROW_H}}>
+              {items.length===0?
+                <div style={{fontSize:12,color:C.textMuted,fontStyle:"italic"}}>—</div>
+              :items.map(it=><div key={it.id} style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:4,height:20,borderRadius:2,background:catColor[it.category]||C.gold,flexShrink:0}}/>
+                <span style={{fontSize:13,fontWeight:500,flex:1}}>{it.text}</span>
+                <span style={S.badge(catColor[it.category])}>{catLabel[it.category]}</span>
+                <button style={S.btnI} onClick={()=>openEditItem(it)}><I name="edit" size={14} color={C.textMuted}/></button>
+                <button style={S.btnI} onClick={()=>rmItem(it.id)}><I name="trash" size={14} color={C.red}/></button>
+              </div>)}
+            </div>
+
+            {/* Add button */}
+            <div style={{display:"flex",alignItems:"center",padding:"0 12px",flexShrink:0}}>
+              <button style={{...S.btnI,background:C.bgHover,borderRadius:6,padding:4}} onClick={()=>openAddItem(mo.key)}>
+                <I name="plus" size={16} color={C.gold}/>
+              </button>
+            </div>
+          </div>
+        </Fragment>;
+      })}
+    </div>
+
+    {/* Item Modal */}
+    {itemModal&&<Modal title={editItem?"予定を編集":"月の予定を追加"} onClose={()=>setItemModal(false)}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div><label style={S.lbl}>月</label><select style={{...S.sel,width:"100%"}} value={iF.month} onChange={e=>setIF({...iF,month:e.target.value})}><MonthOpts/></select></div>
+        <div><label style={S.lbl}>内容</label><input style={S.inp} value={iF.text} onChange={e=>setIF({...iF,text:e.target.value})} placeholder="例：院試、卒論、就活開始"/></div>
+        <div><label style={S.lbl}>カテゴリ</label><select style={{...S.sel,width:"100%"}} value={iF.category} onChange={e=>setIF({...iF,category:e.target.value})}><CatOptions/></select></div>
+        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={saveItem}>{editItem?"更新":"追加"}</button>
+      </div>
+    </Modal>}
+
+    {/* Range Modal */}
+    {rangeModal&&<Modal title={editRange?"期間を編集":"期間を追加（⇔）"} onClose={()=>setRangeModal(false)}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={S.g2}>
+          <div><label style={S.lbl}>開始月</label><select style={{...S.sel,width:"100%"}} value={rF.startMonth} onChange={e=>setRF({...rF,startMonth:e.target.value})}><MonthOpts/></select></div>
+          <div><label style={S.lbl}>終了月</label><select style={{...S.sel,width:"100%"}} value={rF.endMonth} onChange={e=>setRF({...rF,endMonth:e.target.value})}><MonthOpts/></select></div>
+        </div>
+        <div><label style={S.lbl}>内容</label><input style={S.inp} value={rF.text} onChange={e=>setRF({...rF,text:e.target.value})} placeholder="例：街ツク活動期間、就活準備期間"/></div>
+        <div><label style={S.lbl}>カテゴリ</label><select style={{...S.sel,width:"100%"}} value={rF.category} onChange={e=>setRF({...rF,category:e.target.value})}><CatOptions/></select></div>
+        <div style={{fontSize:12,color:C.textMuted,background:C.bgHover,borderRadius:8,padding:"8px 12px"}}>
+          {monthIdx(rF.startMonth)>=0&&monthIdx(rF.endMonth)>=0&&monthIdx(rF.startMonth)<=monthIdx(rF.endMonth)
+            ? "⇔ "+allMonths[monthIdx(rF.startMonth)]?.label+" 〜 "+allMonths[monthIdx(rF.endMonth)]?.label+" ("+((monthIdx(rF.endMonth)-monthIdx(rF.startMonth))+1)+"ヶ月間)"
+            : "開始月は終了月より前にしてください"}
+        </div>
+        <button style={{...S.btn(),width:"100%",justifyContent:"center",marginTop:8}} onClick={saveRange}>{editRange?"更新":"追加"}</button>
+      </div>
+    </Modal>}
+  </div>;
+};
+
 /* ===== MAIN APP ===== */
 const App=()=>{
   const mobile = useIsMobile(900);
@@ -418,14 +631,23 @@ const App=()=>{
   const [notes,setNotes]=useState(saved?.notes || SAMPLE_NOTES);
   const [habits,setHabits]=useState(saved?.habits || SAMPLE_HABITS);
   const [hLog,setHLog]=useState(()=>saved?.habitLog || genSampleLog());
+  const [roadmapItems,setRoadmapItems]=useState(saved?.roadmapItems || SAMPLE_ROADMAP_ITEMS);
+  const [roadmapRanges,setRoadmapRanges]=useState(saved?.roadmapRanges || SAMPLE_ROADMAP_RANGES);
 
   /* 自動保存 */
-  useEffect(()=>{saveData({events,tasks,notes,habits,habitLog:hLog});},[events,tasks,notes,habits,hLog]);
+  useEffect(()=>{saveData({events,tasks,notes,habits,habitLog:hLog,roadmapItems,roadmapRanges});},[events,tasks,notes,habits,hLog,roadmapItems,roadmapRanges]);
 
-  const impAll=useCallback(d=>{if(d.events)setEvents(d.events);if(d.tasks)setTasks(d.tasks);if(d.notes)setNotes(d.notes);if(d.habits)setHabits(d.habits);if(d.habitLog)setHLog(d.habitLog);},[]);
-  const expD=()=>{const d=JSON.stringify({events,tasks,notes,habits,habitLog:hLog},null,2);const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="planner-backup-"+todayStr+".json";a.click();URL.revokeObjectURL(u);};
+  const impAll=useCallback(d=>{if(d.events)setEvents(d.events);if(d.tasks)setTasks(d.tasks);if(d.notes)setNotes(d.notes);if(d.habits)setHabits(d.habits);if(d.habitLog)setHLog(d.habitLog);if(d.roadmapItems)setRoadmapItems(d.roadmapItems);if(d.roadmapRanges)setRoadmapRanges(d.roadmapRanges);},[]);
+  const expD=()=>{const d=JSON.stringify({events,tasks,notes,habits,habitLog:hLog,roadmapItems,roadmapRanges},null,2);const b=new Blob([d],{type:"application/json"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="planner-backup-"+todayStr+".json";a.click();URL.revokeObjectURL(u);};
   const impF=e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>{try{impAll(JSON.parse(ev.target.result));}catch(err){alert("読み込み失敗");}};r.readAsText(file);};
-  const nav=[{id:"dashboard",label:"ホーム",icon:"home"},{id:"schedule",label:"予定",icon:"calendar"},{id:"tasks",label:"タスク",icon:"checkSquare"},{id:"notes",label:"メモ",icon:"bookOpen"},{id:"habits",label:"習慣",icon:"target"}];
+  const nav=[
+    {id:"dashboard",label:"ホーム",icon:"home"},
+    {id:"schedule",label:"予定",icon:"calendar"},
+    {id:"tasks",label:"タスク",icon:"checkSquare"},
+    {id:"notes",label:"メモ",icon:"bookOpen"},
+    {id:"habits",label:"習慣",icon:"target"},
+    {id:"roadmap",label:"計画",icon:"roadmap"},
+  ];
 
   const content = <Fragment>
     {pg==="dashboard"&&<Dashboard events={events} tasks={tasks} habits={habits} habitLog={hLog} notes={notes} mobile={mobile}/>}
@@ -433,6 +655,7 @@ const App=()=>{
     {pg==="tasks"&&<Tasks tasks={tasks} setTasks={setTasks}/>}
     {pg==="notes"&&<Notes notes={notes} setNotes={setNotes}/>}
     {pg==="habits"&&<Habits habits={habits} setHabits={setHabits} habitLog={hLog} setHabitLog={setHLog}/>}
+    {pg==="roadmap"&&<Roadmap roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} roadmapRanges={roadmapRanges} setRoadmapRanges={setRoadmapRanges}/>}
   </Fragment>;
 
   /* --- Mobile layout: top header + content + bottom tab bar --- */
@@ -448,7 +671,7 @@ const App=()=>{
       <div style={S.mainMobile}>{content}</div>
       <div style={S.bottomBar}>
         {nav.map(n=><button key={n.id} style={S.bottomItem(pg===n.id)} onClick={()=>sPg(n.id)}>
-          <I name={n.icon} size={20} color={pg===n.id?C.gold:C.textMuted}/>
+          <I name={n.icon} size={18} color={pg===n.id?C.gold:C.textMuted}/>
           <span>{n.label}</span>
         </button>)}
       </div>
